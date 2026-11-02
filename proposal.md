@@ -42,10 +42,12 @@ Our team members:
 ### Team Responsibilities
 
 ---
-## 4 Initial Team Reasoning & AI-Assisted Exploration
+## 4. Initial Team Reasoning & AI-Assisted Exploration
 ### Initial Team Reasoning (Before Using AI)
 **Architecture choices (early decisions and why)**  
+
 **Anticipated challenges (what we expected to be hardest)**
+
 **Early development approach (how we planned to build it)**
 
 ### AI-Assisted Exploration
