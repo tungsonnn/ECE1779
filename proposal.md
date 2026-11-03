@@ -12,10 +12,11 @@ Our team members:
 {Few lines summary}
 
 ### Problem Statement
-
+{Can focus on how company have employees whom paste credentials to LLM}
 ### Target Users
-
+{Company or personal user}
 ### Technical Motivation & Value
+{Rising use of AI...}
 
 ---
 
