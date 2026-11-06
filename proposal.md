@@ -32,22 +32,52 @@ It needs to happen automatically, at a single point that all LLM traffic passes 
 - Banning AI tools gives up the productivity benefit and risks pushing usage to unmonitored personal accounts.
 - Provider privacy commitments (e.g., not training on business data) govern what happens after data has already left; they do not prevent the disclosure itself.
 - Self-hosting an LLM keeps data in-house but requires costly GPU infrastructure and ongoing operations that small teams cannot justify.
-- Simple redaction (replacing personally identifiable information (PII) with [REDACTED]) protects data but degrades answers, since the model's response can no longer refer to the right person or account.
+- Simple redaction (replacing personally identifiable information (PII) with [REDACTED]) protects data but degrades answers, 
+since the model's response can no longer refer to the right person or account.
 
-Our project fills this gap: a shared gateway that removes PII before a request leaves, restores it on the way back, and audits without storing content. Because all tenants depend on it, it must be reliable and stateful, a natural fit for cloud-native deployment.
+Our project fills this gap: a shared gateway that removes PII before a request leaves, restores it on the way back, 
+and audits without storing content. Because all tenants depend on it, it must be reliable and stateful, a natural fit for cloud-native deployment.
 
 ---
 
 ## 2. Objectives, Architecture, and Key Features 
-### Objectives (Daniel)
-{A paragraph of objectives here}
+### Objectives 
+Build a stateful, cloud-native proxy that removes PII from every prompt before it reaches a hosted LLM, using Presidio plus a custom API-key detector; 
+restores real values in  the reply; keeps a per-tenant audit log that never stores content;  and runs reliably on DigitalOcean Kubernetes with monitoring and alerts.
 
-{A section of in-scope vs. out-of-scope}
+### Architecture 
+The system is a multi-tenant HTTPS proxy between client applications and a hosted LLM. 
+All components run as containers on DigitalOcean Kubernetes (DOKS); only LLM is external.
 
-### Technical Stack & Architecture (Ammar)
-{List our technical decisions (cues from README.md here)}
+[Diagram Placeholder]
 
-### Key Features (Hira)
+**Request flow.** Each request is handled synchronously:
+1. Authenticate the API key (stored only as a hash) and check the tenant's rate limit.
+2. The Presidio Analyzer detects PII; the proxy replaces it with numbered placeholders (e.g. <PERSON_1>), keeping the mapping in memory for this request only.
+3. The sanitized text goes to the LLM; real values are restored in the reply.
+4. An audit row (tenant, entity counts, status, latency; never content) is written before replying.
+
+The proxy fails closed: if PII detection or the database is unavailable, it returns 503 rather than forwarding unsanitized or unrecorded data. 
+We rejected a queue-based design because PII would have to be stored while queued.
+
+**State and persistent storage.** PostgreSQL stores tenants, hashed API keys, rate-limit counters, and the audit log. 
+It runs as a StatefulSet whose PersistentVolumeClaim is backed by a DigitalOcean Volume, so data survives pod restarts and node rescheduling. 
+Rate limits live in PostgreSQL, not per-pod memory, so the limit holds across replicas. Prompts, replies, 
+and placeholder maps exist only in memory and are never written to the database or logs.
+
+**Deployment.**
+- Docker Compose runs the full stack locally with a fake LLM for development and tests.
+- Kubernetes: developed on minikube, deployed to DOKS, with Kustomize overlays so both environments share one set of manifests. 
+Nodes are sized so the cluster survives losing any one of them.
+- Networking: the proxy and UI are exposed through DigitalOcean load balancers with managed HTTPS certificates; the Analyzer and database are internal only.
+- CI/CD: GitHub Actions tests each pull request and pushes images, tagged by commit ID, to GitHub Container Registry
+Secrets come from Kubernetes Secrets, never images.
+
+**Monitoring.** DigitalOcean alerts on node CPU, memory, and disk, and uptime checks watch the public endpoints. 
+A /health/deep endpoint, checked by a DigitalOcean uptime monitor, alerts us when the database or Analyzer fails. 
+The admin dashboard shows per-tenant requests, errors, latency, and PII caught, computed from the audit log.
+
+### Key Features
 #### Core Features
 
 #### Advanced Features 
