@@ -1,5 +1,4 @@
-# Project Proposal - LLM PII Proxy: Privacy gateway sanitizing PII before prompts reach a hosted LLM
-Our team members:
+# Project Proposal - LLM PII Proxy
 
 |Name|Student Number|Email|
 |:--:|:---:|:--:|
@@ -96,7 +95,7 @@ Secrets come from Kubernetes Secrets, never images.
 A /health endpoint, checked by a DigitalOcean uptime monitor, alerts us when the database or Analyzer fails. 
 The admin dashboard shows per-tenant requests, errors, latency, and PII caught, computed from the audit log.
 
-### Scope and feasibility
+#### Scope and feasibility
 **Out of scope:** streaming responses, multi-turn conversations, and database replication, 
 keeping the scope feasible for four people in five weeks.
 
