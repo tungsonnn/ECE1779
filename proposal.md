@@ -1,4 +1,4 @@
-# Project Proposal - {Name of Project}: {One line description}
+# Project Proposal - LLM PII Proxy: Privacy gateway sanitizing PII before prompts reach a hosted LLM
 Our team members:
 
 |Name|Student Number|Email|
@@ -6,7 +6,7 @@ Our team members:
 |Daniel Nolfi|1006018131|daniel.nolfi@mail.utoronto.ca|
 |Hira Irfan|1008603370|hira.irfan@mail.utoronto.ca|
 |Muhammad Ammar Mustafa|1005499970|a.mustafa@mail.utoronto.ca|
-|Son Le|1011809893|sontung.le@mail.utoronto.ca|
+|Tung Son Le|1011809893|sontung.le@mail.utoronto.ca|
 
 ## 1. Motivation
 Large language models (LLMs) are now part of everyday work: staff paste customer emails into chatbots to draft replies, 
@@ -26,9 +26,9 @@ It needs to happen automatically, at a single point that all LLM traffic passes 
 - Application developers who build LLM features into internal tools and need privacy protection without changing every application.
 - Teams or client organizations (tenants) that share one gateway, each with its own API keys, usage limits, and isolated records.
 - Administrators and compliance staff who must show that personal data was not disclosed, and need an audit trail that does not itself become a store of sensitive data.
-- The people whose data appears in prompts, such as customers and employees, who never agreed to share it with an AI provider.
+- People whose data appears in prompts, such as customers and employees, who never agreed to share it with an AI provider.
 
-### Existing approaches limitations
+### Limitations of Existing Approaches
 - Banning AI tools gives up the productivity benefit and risks pushing usage to unmonitored personal accounts.
 - Provider privacy commitments (e.g., not training on business data) govern what happens after data has already left; they do not prevent the disclosure itself.
 - Self-hosting an LLM keeps data in-house but requires costly GPU infrastructure and ongoing operations that small teams cannot justify.
@@ -43,7 +43,7 @@ and audits without storing content. Because all tenants depend on it, it must be
 ## 2. Objectives, Architecture, and Key Features 
 ### Objectives 
 Build a stateful, cloud-native proxy that removes PII from every prompt before it reaches a hosted LLM, using Presidio plus a custom API-key detector; 
-restores real values in  the reply; keeps a per-tenant audit log that never stores content;  and runs reliably on DigitalOcean Kubernetes with monitoring and alerts.
+restores real values in the reply; keeps a per-tenant audit log that never stores content; and runs reliably on DigitalOcean Kubernetes with monitoring and alerts.
 
 ### Architecture 
 The system is a multi-tenant HTTPS proxy between client applications and a hosted LLM. 
@@ -68,13 +68,13 @@ All components run as containers on DigitalOcean Kubernetes (DOKS); only LLM is 
 **Request flow.** Each request is handled synchronously:
 1. Authenticate the API key (stored only as a hash) and check the tenant's rate limit.
 2. The Presidio Analyzer detects PII; the proxy replaces it with numbered placeholders (e.g. `<PERSON_1>`), keeping the mapping in memory for this request only.
-3. The sanitized text goes to the LLM; real values are restored in the reply.
-4. An audit row (tenant, entity counts, status, latency; never content) is written before replying.
+3. A pending audit row is inserted; if this write fails, request is refused (503).
+4. Sanitized text goes to the LLM; real values are restored in the reply, and the audit row is updated with status and latency.
 
 The proxy fails closed: if PII detection or the database is unavailable, it returns 503 rather than forwarding unsanitized or unrecorded data. 
 We rejected a queue-based design because PII would have to be stored while queued.
  
-**Component and scaling.** Stateless components run two replicas, because redundancy only costs memory: FastAPI proxy and the Presidio Analyzer. 
+**Components and scaling.** Stateless components run two replicas, because redundancy only costs memory: FastAPI proxy and the Presidio Analyzer. 
 Running Presidio as a separate service shares its memory-heavy NLP model across proxy replicas, 
 and anonymization is done in the proxy because we need numbered, reversible placeholders that Presidio's Anonymizer service doesn't provide. 
 The stateful database runs a single instance, since redundancy would require replication, which is beyond our scope.
@@ -96,6 +96,10 @@ Secrets come from Kubernetes Secrets, never images.
 A /health endpoint, checked by a DigitalOcean uptime monitor, alerts us when the database or Analyzer fails. 
 The admin dashboard shows per-tenant requests, errors, latency, and PII caught, computed from the audit log.
 
+### Scope and feasibility
+**Out of scope:** streaming responses, multi-turn conversations, and database replication, 
+keeping the scope feasible for four people in five weeks.
+
 ### Key Features
 #### Core Features
 1. Multi-tenant access: each team (tenant) uses its own API key, and its usage and audit history are kept separate.
@@ -109,8 +113,8 @@ The mapping exists in memory for one request only.
 7. Demo and admin pages: a demo page shows a prompt before and after cleaning, and an admin page shows usage, errors and PII caught per tenant.
 
 #### Advanced Features 
-1. Security: hashed per-tenant API keys, Postgres-backed rate limits, Kubernetes Secrets, HTTPS via DO load-balancer certificates. 
-With security via Cloudflare a stretch.
+1. Security: hashed per-tenant API keys, Postgres-backed rate limits, Kubernetes Secrets, HTTPS via DO load-balancer certificates 
+(Cloudflare WAF as a stretch goal).
 2. External service: a hosted LLM API (gpt-oss-120b), with a fake LLM for testing at no cost.
 3. CI/CD: GitHub Actions tests every pull request and builds images on merge.
 
@@ -152,23 +156,25 @@ With security via Cloudflare a stretch.
 
 ---
 ## 4. Initial Team Reasoning & AI-Assisted Exploration
-### Initial Team Reasoning (Before Using AI)
-**Architecture choices (early decisions and why)**  
+### 4.1 Initial Team Reasoning (Before Using AI)
+Problem Framing: Our initial understanding of the problem was to find a way to provide individual users and businesses 
+with a web interface to safely process LLM prompts that may contain PII. Our goal is to create a proxy server that 
+can scrub PII from prompts before anything is seen by the LLM, in addition to providing a simple UI.
 
-**Anticipated challenges (what we expected to be hardest)**
+Architecture Choice: The team decided on creating a multi tenant HTTPS proxy where each component is containerized using 
+DigitalOcean Kubernetes to process all calls made to an external LLM API. We decided on using official LLM APIs rather 
+than hosting our own LLM to reduce the system complexity and costs.
 
-**Early development approach (how we planned to build it)**
+**Open Questions**
+- Will the LLM keep placeholders like `<PERSON_1>` intact?
+- Will Presidio's ~2 GB model fit our node budget?
+- Is Cloudflare worth its setup cost compared with DO-managed certificates?
 
-### AI-Assisted Exploration
-**What was developed without AI assistance**
-Before using AI tools, our team independently decided:
-- [TBD]
-- ...
-
-**How AI tools contributed**
-AI assistance was used to:
-- [TBD]
-- ...
-
-**One specific AI-influenced idea and our team’s tradeoff discussion**
-[TBD, similar to reasoning.md Q3 of our assignments]
+### 4.2 AI-Assisted Exploration
+1. Our plan wrote the audit row after the LLM call. AI assistant pointed out that sanitized text reaches the provider before any record exists, 
+so a crash would leave no trace. It proposed a two-phase audit: insert a pending row before the LLM call, update it afterward, 
+and refuse the request if the first write fails. Before adopting it, we checked real practice: it follows the established fail-safe defaults principle, 
+though production gateways like LiteLLM log asynchronously for throughput. We judged the stronger guarantee worthwhile at our low traffic, 
+estimated it at about 20–30 extra lines of code, and adopted for this two-phase approach.
+2. AI assistant estimated self-hosting at $72–766 for six weeks versus a few dollars through a hosted API. 
+After we confirmed the GPU droplet hourly price on DO's pricing page, we chose hosted gpt-oss-120b, since only sanitized text leaves our system.
