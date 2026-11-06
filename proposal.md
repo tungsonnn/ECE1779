@@ -79,16 +79,30 @@ The admin dashboard shows per-tenant requests, errors, latency, and PII caught, 
 
 ### Key Features
 #### Core Features
+1. Multi-tenant access: each team (tenant) uses its own API key, and its usage and audit history are kept separate.
+2. PII removal before the LLM: Presidio finds names, emails, phone numbers, credit card numbers, IP addresses and locations, 
+and the proxy swaps each one for a numbered placeholder such as <PERSON_1>.
+3. API key detection: a custom pattern detector also catches API keys and tokens pasted along with code.
+4. Restored replies: placeholders in the LLM's reply are swapped back to the real values, so answers stay useful. 
+The mapping exists in memory for one request only.
+5. Audit log without content: each request records the tenant, PII counts, status and latency, never the prompt or reply.
+6. Measured accuracy: using generated fake data, we report how much PII is caught for each type.
+7. Demo and admin pages: a demo page shows a prompt before and after cleaning, and an admin page shows usage, errors and PII caught per tenant.
 
 #### Advanced Features 
-{List 2 or more picked advanced features here}
+1. Security: hashed per-tenant API keys, Postgres-backed rate limits, Kubernetes Secrets, HTTPS via DO load-balancer certificates. 
+With security via Cloudflare a stretch.
+2. External service: a hosted LLM API (gpt-oss-120b), with a fake LLM for testing at no cost.
+3. CI/CD: GitHub Actions tests every pull request and builds images on merge.
 
 ---
 
 ## 3. Project Plan & Team Responsibilities 
-### Project Plan (Son)
-{Split our workload into 5 weeks chunk with final deadline of first week of December}
+### Project Plan 
+[Table Placeholder]
+
 ### Team Responsibilities
+[Table Placeholder]
 
 ---
 ## 4. Initial Team Reasoning & AI-Assisted Exploration
