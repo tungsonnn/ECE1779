@@ -49,16 +49,35 @@ restores real values in  the reply; keeps a per-tenant audit log that never stor
 The system is a multi-tenant HTTPS proxy between client applications and a hosted LLM. 
 All components run as containers on DigitalOcean Kubernetes (DOKS); only LLM is external.
 
-[Diagram Placeholder]
+```text
+      api.<domain>                          admin.<domain>
+   [DO Load Balancer]                     [DO Load Balancer]
+           |                                      |
+ +---------|------- DOKS cluster (2-3 nodes) -----|---------+
+ |         v                                      v         |
+ |   Proxy x2 (stateless) <---- admin API ---- Streamlit UI |
+ |     |            |                                       |
+ |     v            v                                       |
+ |   Presidio     PostgreSQL x1 (StatefulSet)               |
+ |   Analyzer x2    +- PVC -> DigitalOcean Volume           |
+ +-----|----------------------------------------------------+
+       v
+   Hosted LLM API (gpt-oss-120b)
+```
 
 **Request flow.** Each request is handled synchronously:
 1. Authenticate the API key (stored only as a hash) and check the tenant's rate limit.
-2. The Presidio Analyzer detects PII; the proxy replaces it with numbered placeholders (e.g. <PERSON_1>), keeping the mapping in memory for this request only.
+2. The Presidio Analyzer detects PII; the proxy replaces it with numbered placeholders (e.g. `<PERSON_1>`), keeping the mapping in memory for this request only.
 3. The sanitized text goes to the LLM; real values are restored in the reply.
 4. An audit row (tenant, entity counts, status, latency; never content) is written before replying.
 
 The proxy fails closed: if PII detection or the database is unavailable, it returns 503 rather than forwarding unsanitized or unrecorded data. 
 We rejected a queue-based design because PII would have to be stored while queued.
+ 
+**Component and scaling.** Stateless components run two replicas, because redundancy only costs memory: FastAPI proxy and the Presidio Analyzer. 
+Running Presidio as a separate service shares its memory-heavy NLP model across proxy replicas, 
+and anonymization is done in the proxy because we need numbered, reversible placeholders that Presidio's Anonymizer service doesn't provide. 
+The stateful database runs a single instance, since redundancy would require replication, which is beyond our scope.
 
 **State and persistent storage.** PostgreSQL stores tenants, hashed API keys, rate-limit counters, and the audit log. 
 It runs as a StatefulSet whose PersistentVolumeClaim is backed by a DigitalOcean Volume, so data survives pod restarts and node rescheduling. 
@@ -74,14 +93,14 @@ Nodes are sized so the cluster survives losing any one of them.
 Secrets come from Kubernetes Secrets, never images.
 
 **Monitoring.** DigitalOcean alerts on node CPU, memory, and disk, and uptime checks watch the public endpoints. 
-A /health/deep endpoint, checked by a DigitalOcean uptime monitor, alerts us when the database or Analyzer fails. 
+A /health endpoint, checked by a DigitalOcean uptime monitor, alerts us when the database or Analyzer fails. 
 The admin dashboard shows per-tenant requests, errors, latency, and PII caught, computed from the audit log.
 
 ### Key Features
 #### Core Features
 1. Multi-tenant access: each team (tenant) uses its own API key, and its usage and audit history are kept separate.
 2. PII removal before the LLM: Presidio finds names, emails, phone numbers, credit card numbers, IP addresses and locations, 
-and the proxy swaps each one for a numbered placeholder such as <PERSON_1>.
+and the proxy swaps each one for a numbered placeholder such as `<PERSON_1>`.
 3. API key detection: a custom pattern detector also catches API keys and tokens pasted along with code.
 4. Restored replies: placeholders in the LLM's reply are swapped back to the real values, so answers stay useful. 
 The mapping exists in memory for one request only.
@@ -98,11 +117,22 @@ With security via Cloudflare a stretch.
 ---
 
 ## 3. Project Plan & Team Responsibilities 
-### Project Plan 
-[Table Placeholder]
+### Project Plan
+| Week | Goal | Deadlines |
+|---|---|---|
+| 1 · Nov 3–8 | Team meeting: confirm owners, stack, volunteers; freeze interfaces. Proposal drafts, diagram, merge. Other work ad hoc. | Proposal, Nov 7 |
+| 2 · Nov 9–15 | Local end-to-end on Docker Compose: app → Presidio → LLM → put values back → audit row. Migrations + CI. | |
+| 3 · Nov 16–22 | Local orchestrator → cloud live: replicas, persistent DB volume, Secrets, HTTPS, alerts + uptime check, eval numbers, UI. | Health check, Nov 16 |
+| 4 · Nov 23–29 | Presentation prep: demo script + backup clips, slides, rehearsal. | Intro, Nov 23; Slides, Nov 24 |
+| 5 · Nov 30–Dec 5 | Rehearsal + Q&A prep. Final README report + `ai-session.md`. Video on deployed system. Fresh-clone test. | Present, Dec 2; Submission, Dec 5 |
 
 ### Team Responsibilities
-[Table Placeholder]
+| Person | Area | Focus |
+|---|---|---|
+| Daniel Nolfi | Security + UI | Check each request's API key. Limit how many requests a team can send. Keep passwords and keys out of code using Secrets. Enforce HTTPS. Implement a light UI playground. If time permits: Cloudflare WAF, rate limiting, DDoS protection, and up-to-date TLS ciphers. |
+| Hira Irfan | LLM + PII | Find PII with Presidio, including our API-key detector. Swap PII for placeholders, call the LLM, then put real values back. Measure how much PII we catch, using fake test data. |
+| Muhammad Ammar Mustafa | App + Deploy | Build the main app that runs the request steps in order. Package everything in Docker, run it on the chosen orchestrator and cloud, and keep database data safe across restarts. |
+| Tung Son Le | Monitoring + Ops | Design database tables for logs. Set up cloud alerts and an uptime check. Write queries for request counts, speed, and errors. Set up automatic test and build runs on GitHub. |
 
 ---
 ## 4. Initial Team Reasoning & AI-Assisted Exploration
