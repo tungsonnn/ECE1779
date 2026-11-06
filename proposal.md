@@ -134,6 +134,22 @@ With security via Cloudflare a stretch.
 | Muhammad Ammar Mustafa | App + Deploy | Build the main app that runs the request steps in order. Package everything in Docker, run it on the chosen orchestrator and cloud, and keep database data safe across restarts. |
 | Tung Son Le | Monitoring + Ops | Design database tables for logs. Set up cloud alerts and an uptime check. Write queries for request counts, speed, and errors. Set up automatic test and build runs on GitHub. |
 
+**Integration**
+- Freeze key interfaces before implementation: monitoring schema, secret names, Presidio call contract, and health endpoint.
+- One request path ties the parts together: auth (Daniel) → scrub, LLM, restore (Hira) → audit row (Son's schema) → metrics and alerts (Son). Each step has a fixed input and output, so owners work in parallel against stubs.
+- Docker Compose is the shared integration environment: everyone runs the stack with `docker compose up`.
+
+**Dependencies**
+- The app skeleton (Ammar) is the hub that Security, LLM + PII, and Monitoring plug into, so it comes first in Week 2.
+- Alerts and the uptime check depend on the Week 3 cloud deploy and on `/health`.
+- HTTPS depends on the hostname decision and ingress setup.
+- The UI depends on the metrics queries and the request API.
+
+**Risks and mitigations**
+1. Presidio needs ~2 GB RAM → size nodes at ≥4 GB (covered by DO credits).
+2. The LLM may alter placeholders (`<PERSON_1>`) → test it; fallback is to leave the placeholder as-is and log it.
+3. Integration slips toward the slide deadline → feature freeze on Nov 22.
+
 ---
 ## 4. Initial Team Reasoning & AI-Assisted Exploration
 ### Initial Team Reasoning (Before Using AI)
