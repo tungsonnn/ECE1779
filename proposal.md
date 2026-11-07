@@ -45,8 +45,7 @@ Build a stateful, cloud-native proxy that removes PII from every prompt before i
 restores real values in the reply; keeps a per-tenant audit log that never stores content; and runs reliably on DigitalOcean Kubernetes with monitoring and alerts.
 
 ### Architecture 
-The system is a multi-tenant HTTPS proxy between client applications and a hosted LLM. 
-All components run as containers on DigitalOcean Kubernetes (DOKS); only LLM is external.
+A multi-tenant HTTPS proxy sits between client applications and a hosted LLM. All components run as containers on DigitalOcean Kubernetes (DOKS); only the LLM is external.
 
 ```text
       api.<domain>                          admin.<domain>
@@ -64,36 +63,21 @@ All components run as containers on DigitalOcean Kubernetes (DOKS); only LLM is 
    Hosted LLM API (gpt-oss-120b)
 ```
 
-**Request flow.** Each request is handled synchronously:
-1. Authenticate the API key (stored only as a hash) and check the tenant's rate limit.
-2. The Presidio Analyzer detects PII; the proxy replaces it with numbered placeholders (e.g. `<PERSON_1>`), keeping the mapping in memory for this request only.
-3. A pending audit row is inserted; if this write fails, request is refused (503).
-4. Sanitized text goes to the LLM; real values are restored in the reply, and the audit row is updated with status and latency.
+**Request flow** (synchronous):
+1. Authenticate the hashed API key and check the tenant's rate limit.
+2. Presidio detects PII; the proxy replaces it with numbered placeholders (e.g. `<PERSON_1>`), keeping the mapping in memory only.
+3. A pending audit row is inserted; if this fails, the request is refused (503).
+4. Sanitized text goes to the LLM; real values are restored and the audit row is updated.
 
-The proxy fails closed: if PII detection or the database is unavailable, it returns 503 rather than forwarding unsanitized or unrecorded data. 
-We rejected a queue-based design because PII would have to be stored while queued.
- 
-**Components and scaling.** Stateless components run two replicas as Kubernetes Deployments behind internal Services, because redundancy only costs memory: FastAPI proxy and the Presidio Analyzer. 
-Running Presidio as a separate service shares its memory-heavy NLP model across proxy replicas, 
-and anonymization is done in the proxy because we need numbered, reversible placeholders that Presidio's Anonymizer service doesn't provide. 
-The stateful database runs a single instance, since redundancy would require replication, which is beyond our scope.
+The proxy fails closed: if PII detection or the database is unavailable, it returns 503 rather than forwarding unsanitized data. We rejected a queue-based design because PII would be stored while queued.
 
-**State and persistent storage.** PostgreSQL stores tenants, hashed API keys, rate-limit counters, and the audit log. 
-It runs as a StatefulSet whose PersistentVolumeClaim is backed by a DigitalOcean Volume, so data survives pod restarts and node rescheduling. 
-Rate limits live in PostgreSQL, not per-pod memory, so the limit holds across replicas. Prompts, replies, 
-and placeholder maps exist only in memory and are never written to the database or logs.
+**Components and scaling.** The FastAPI proxy and Presidio Analyzer are stateless and run two replicas each, since redundancy only costs memory. Running Presidio as a separate service shares its memory-heavy NLP model across proxy replicas; anonymization happens in the proxy because Presidio's Anonymizer cannot produce numbered, reversible placeholders. The database runs as a single instance, since replication is beyond our scope.
 
-**Deployment.**
-- Docker Compose runs the full stack locally with a fake LLM for development and tests.
-- Kubernetes: developed on minikube, deployed to DOKS, with Kustomize overlays so both environments share one set of manifests. 
-Nodes are sized so the cluster survives losing any one of them.
-- Networking: the proxy and UI are exposed through DigitalOcean load balancers with managed HTTPS certificates; the Analyzer and database are internal only.
-- CI/CD: GitHub Actions tests each pull request and pushes images, tagged by commit ID, to GitHub Container Registry.
-Secrets come from Kubernetes Secrets, never images.
+**State and persistent storage.** PostgreSQL stores tenants, hashed API keys, rate-limit counters and the audit log, as a StatefulSet backed by a DigitalOcean Volume, so data survives restarts. Keeping rate limits in PostgreSQL makes them hold across replicas. Prompts, replies and placeholder maps never reach the database or logs.
 
-**Monitoring.** DigitalOcean alerts on node CPU, memory, and disk, and uptime checks watch the public endpoints. 
-A /health endpoint, checked by a DigitalOcean uptime monitor, alerts us when the database or Analyzer fails. 
-The admin dashboard shows per-tenant requests, errors, latency, and PII caught, computed from the audit log.
+**Deployment.** Docker Compose runs the full stack locally with a fake LLM. Kubernetes manifests are tested on minikube and deployed to DOKS using shared Kustomize overlays, with nodes sized to survive losing one. Only the proxy and UI are public, through DigitalOcean load balancers with managed HTTPS; secrets come from Kubernetes Secrets.
+
+**Monitoring.** DigitalOcean alerts on node CPU, memory and disk, and uptime checks watch the public endpoints and a /health endpoint that fails if the database or Analyzer is down. An admin dashboard shows per-tenant usage, errors and PII caught.
 
 #### Scope and feasibility
 **Out of scope:** streaming responses, multi-turn conversations, and database replication, 
