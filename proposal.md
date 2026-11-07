@@ -73,7 +73,7 @@ All components run as containers on DigitalOcean Kubernetes (DOKS); only LLM is 
 The proxy fails closed: if PII detection or the database is unavailable, it returns 503 rather than forwarding unsanitized or unrecorded data. 
 We rejected a queue-based design because PII would have to be stored while queued.
  
-**Components and scaling.** Stateless components run two replicas, because redundancy only costs memory: FastAPI proxy and the Presidio Analyzer. 
+**Components and scaling.** Stateless components run two replicas as Kubernetes Deployments behind internal Services, because redundancy only costs memory: FastAPI proxy and the Presidio Analyzer. 
 Running Presidio as a separate service shares its memory-heavy NLP model across proxy replicas, 
 and anonymization is done in the proxy because we need numbered, reversible placeholders that Presidio's Anonymizer service doesn't provide. 
 The stateful database runs a single instance, since redundancy would require replication, which is beyond our scope.
@@ -88,7 +88,7 @@ and placeholder maps exist only in memory and are never written to the database 
 - Kubernetes: developed on minikube, deployed to DOKS, with Kustomize overlays so both environments share one set of manifests. 
 Nodes are sized so the cluster survives losing any one of them.
 - Networking: the proxy and UI are exposed through DigitalOcean load balancers with managed HTTPS certificates; the Analyzer and database are internal only.
-- CI/CD: GitHub Actions tests each pull request and pushes images, tagged by commit ID, to GitHub Container Registry
+- CI/CD: GitHub Actions tests each pull request and pushes images, tagged by commit ID, to GitHub Container Registry.
 Secrets come from Kubernetes Secrets, never images.
 
 **Monitoring.** DigitalOcean alerts on node CPU, memory, and disk, and uptime checks watch the public endpoints. 
@@ -123,7 +123,7 @@ The mapping exists in memory for one request only.
 ### Project Plan
 | Week | Goal | Deadlines |
 |---|---|---|
-| 1 · Nov 3–8 | Team meeting: confirm owners, stack, volunteers; freeze interfaces. Proposal drafts, diagram, merge. Other work ad hoc. | Proposal, Nov 7 |
+| 1 · Nov 3–8 |Finalize owners and stack; freeze interfaces; write and merge the proposal. | Proposal, Nov 7 |
 | 2 · Nov 9–15 | Local end-to-end on Docker Compose: app → Presidio → LLM → put values back → audit row. Migrations + CI. | |
 | 3 · Nov 16–22 | Local orchestrator → cloud live: replicas, persistent DB volume, Secrets, HTTPS, alerts + uptime check, eval numbers, UI. | Health check, Nov 16 |
 | 4 · Nov 23–29 | Presentation prep: demo script + backup clips, slides, rehearsal. | Intro, Nov 23; Slides, Nov 24 |
