@@ -30,3 +30,13 @@ FROM audit_log a
          JOIN tenants t ON t.id = a.tenant_id
 WHERE a.latency_ms IS NOT NULL
 GROUP BY t.name;
+
+-- 4. PII caught per tenant and entity type, summed from entity_counts JSON
+CREATE OR REPLACE VIEW metrics_pii_caught AS
+SELECT t.name AS tenant,
+       e.key  AS entity,
+       sum(e.value::int) AS caught
+FROM audit_log a
+         JOIN tenants t ON t.id = a.tenant_id
+         CROSS JOIN LATERAL jsonb_each_text(a.entity_counts) AS e
+GROUP BY t.name, e.key;
