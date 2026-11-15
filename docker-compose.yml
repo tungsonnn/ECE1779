@@ -1,0 +1,62 @@
+# Local integration stack: `docker compose up --build`
+#
+# NOTE FOR THE TEAM - expected compose changes as your code lands.
+# The Dockerfile should not need changes: it installs requirements.txt and
+# copies all of app/, so new code/deps are picked up on rebuild.
+#
+# | Who    | Compose change                                                  | When                                   |
+# |--------|-----------------------------------------------------------------|----------------------------------------|
+# | Hira   | Add `LLM_API_KEY: ${LLM_API_KEY}` under app.environment, set    | When the real LLM is wired in          |
+# |        | LLM_URL (key goes in .env, never in this file)                  |                                        |
+# | Hira   | presidio-analyzer: `image:` -> `build:`                         | Only if building a custom Analyzer img |
+# | Son    | Add a `migrate` service; app depends_on it                      | When migrations exist                  |
+# | Son    | Maybe adjust DATABASE_URL prefix (e.g. postgresql+asyncpg://)   | Depending on the driver chosen         |
+# | Daniel | Add a `ui` service (port + API_URL=http://app:8000)             | When the UI exists                     |
+# | Daniel | Rate-limit / key-pepper env vars under app.environment          | If configurable                        |
+# | Ammar  | Presidio healthcheck + depends_on condition: service_healthy    | When the real /health ping lands       |
+#
+# New setting? Add it to app/config.py AND app.environment below (and to
+# .env.example if it's a secret).
+
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      APP_ENV: compose
+      LOG_LEVEL: INFO
+      LLM_URL: ""                      # empty = echo mode
+      PRESIDIO_URL: http://presidio-analyzer:3000
+      DATABASE_URL: postgresql://proxy:${POSTGRES_PASSWORD:-devpass}@postgres:5432/proxy
+    depends_on:
+      postgres:
+        condition: service_healthy
+      presidio-analyzer:
+        condition: service_started
+
+  presidio-analyzer:
+    # TODO: pin a version before the DOKS deploy.
+    image: mcr.microsoft.com/presidio-analyzer:latest
+    ports:
+      - "5002:3000"                    # host 5002 so Hira can hit it directly
+    # Needs ~2 GB RAM for the NLP model.
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: proxy
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-devpass}
+      POSTGRES_DB: proxy
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U proxy -d proxy"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
