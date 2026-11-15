@@ -2,28 +2,30 @@
 
 OWNER: Ammar (App + Deploy).
 
-Deliberately thin: it translates HTTP into a pipeline call and back. Keeping
-logic out of here means routes and pipeline evolve independently, and the
-pipeline stays testable without a running server.
+Deliberately thin: it translates HTTP into a pipeline call and back.
 """
 
 import logging
 
-from fastapi import FastAPI, Header
+from fastapi import FastAPI, Header, Response, status
 
 from app import pipeline
+from app.config import settings
 from app.schemas import ChatRequest, ChatResponse, HealthResponse
 
-# TODO: Configure logging once, at import time, before the app is created:
-#       logging.basicConfig(level=..., format=...) with a format carrying the
-#       timestamp, level, and logger name. Everything in the app logs through
-#       logging.getLogger(__name__), so this is the single place that decides
-#       where lines go. Under Docker and Kubernetes stdout IS the log
-#       destination - never write to files.
+# Configure logging - stdout is the log destination under Docker and Kubernetes - never write to files.
+logging.basicConfig(
+    level=settings.log_level,
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+logger = logging.getLogger(__name__)
+logger.info("starting app_env=%s log_level=%s", settings.app_env, settings.log_level)
 
-app = FastAPI(title="LLM PII Proxy", version="0.1.0")
-# The name `app` matters: "app.main:app" is the import string that uvicorn, the
-# Dockerfile CMD, and the Kubernetes manifest all refer to.
+app = FastAPI(title="LLM PII Proxy")
+
+
+# Check values that mean a dependency is broken. Anything else ("ok", "not_implemented", "echo_mode") does not fail the health check.
+_FAILING = {"down", "error"}
 
 
 @app.post("/v1/chat", response_model=ChatResponse)
@@ -32,30 +34,34 @@ async def chat(
     x_api_key: str | None = Header(default=None, alias="X-API-Key"),
 ) -> ChatResponse:
     """Sanitize a prompt, send it to the LLM, and return the restored reply."""
-    # TODO: Hand off to the pipeline and return its result:
-    #           return await pipeline.run(prompt=request.prompt,
-    #                                     api_key=x_api_key)
-    #       Nothing else belongs in this function - no validation (ChatRequest
-    #       already did it), no logging, no error handling (the pipeline raises
-    #       HTTPException and FastAPI renders it).
-    #
-    #       default=None on the header is deliberate: a missing key should
-    #       reach auth.authenticate() as None and come back as a clean 401,
-    #       not a 422 from FastAPI's own validation layer.
-    raise NotImplementedError
+    # No validation, logging, or error handling. ChatRequest validated the
+    # body, and the pipeline raises HTTPException which FastAPI renders. default=None on the header lets a missing key reach auth as None and come back as 401.
+    return await pipeline.run(prompt=request.prompt, api_key=x_api_key)
 
 
 @app.get("/health", response_model=HealthResponse)
-async def health() -> HealthResponse:
-    """Liveness and readiness probe. Contract agreed with Son."""
-    # TODO: Return HealthResponse(status=..., checks={...}) with one entry per
-    #       hard dependency.
-    #   * For now: "database" and "pii_analyzer" reported as
-    #     "not_implemented", and an "llm" entry derived from whether
-    #     settings.llm_url is set.
-    #   * status must become non-"ok" once a real check fails. Kubernetes uses
-    #     this to decide whether this pod receives traffic, and Son's uptime
-    #     check uses it to decide whether to alert - so a health endpoint that
-    #     always returns "ok" silently defeats both.
-    #   * Keep it cheap and unauthenticated: it is polled every few seconds.
-    raise NotImplementedError
+async def health(response: Response) -> HealthResponse:
+    """Liveness and readiness probe. Contract agreed with Son.
+
+    Cheap and unauthenticated: it is polled every few seconds.
+    """
+    checks = {
+        # TODO: real check - run `SELECT 1` against DATABASE_URL with a ~1-2s
+        #       timeout; "ok" on success, "down" on timeout/connection error.
+        #       A set URL alone is not enough: it must be reachable.
+        "database": "not_implemented",
+        # TODO: real check - GET {settings.presidio_url}/health via httpx with a
+        #       ~1-2s timeout; "ok" on 200, "down" otherwise. Doesn't depend on
+        #       Hira's code, so it can land as soon as Compose runs Presidio.
+        "pii_analyzer": "not_implemented",
+        # Deliberately NOT pinged: external and paid, and a vendor outage
+        # shouldn't pull our pods from rotation (the pipeline returns 502).
+        "llm": "ok" if settings.llm_url else "echo_mode",
+    }
+
+    if any(v in _FAILING for v in checks.values()):
+        # Kubernetes and uptime checks read the status code, not the body.
+        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        return HealthResponse(status="degraded", checks=checks)
+
+    return HealthResponse(status="ok", checks=checks)

@@ -12,6 +12,9 @@ providers is an environment change, not a code change.
 """
 
 
+from app.config import settings
+
+
 class LLMUnavailable(RuntimeError):
     """Raised when the provider is unreachable or returns an unusable response.
 
@@ -42,4 +45,8 @@ async def complete(sanitized_prompt: str) -> str:
     #     answers 200 with unexpected JSON should raise, not return None.
     #   * Never log the prompt or the completion, even though both are
     #     sanitized at this point.
-    raise NotImplementedError
+    # STUB (Ammar, provider choice with Hira): echo mode only.
+    if not settings.llm_url:
+        return f"[echo mode - no LLM_URL configured] {sanitized_prompt}"
+    # Real provider call not written yet; fail as an upstream error (502).
+    raise LLMUnavailable("LLM provider call not implemented")

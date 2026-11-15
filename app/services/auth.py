@@ -9,7 +9,22 @@ FastAPI renders that into the right HTTP response, which is why pipeline.py
 does not wrap these two calls in try/except.
 """
 
+import logging
+
+from fastapi import HTTPException, status
+
 from app.schemas import Tenant
+
+logger = logging.getLogger(__name__)
+
+# STUB (Daniel to replace): demo keys so the team can run the pipeline before
+# Son's tenants/api_keys tables exist. Two tenants on purpose, to surface
+# tenant-isolation bugs. Plaintext keys here are dev-only; the real version
+# compares hashes from the database.
+_DEMO_KEYS: dict[str, Tenant] = {
+    "demo-key-a": Tenant(id="tenant-a", name="Demo Team A"),
+    "demo-key-b": Tenant(id="tenant-b", name="Demo Team B"),
+}
 
 
 def authenticate(api_key: str | None) -> Tenant:
@@ -27,7 +42,13 @@ def authenticate(api_key: str | None) -> Tenant:
     #     then, a module-level dict of demo keys unblocks everyone else. Use
     #     two tenants, not one: a single-tenant stub hides tenant-isolation
     #     bugs, and multi-tenancy is a graded core feature.
-    raise NotImplementedError
+    # STUB (Daniel to replace): in-memory demo key lookup.
+    if not api_key:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Missing X-API-Key header")
+    tenant = _DEMO_KEYS.get(api_key)
+    if tenant is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid API key")
+    return tenant
 
 
 def check_rate_limit(tenant: Tenant) -> None:
@@ -42,4 +63,5 @@ def check_rate_limit(tenant: Tenant) -> None:
     #     double its limit (proposal: "Keeping rate limits in PostgreSQL makes
     #     them hold across replicas").
     #   * Blocked on Son's rate-limit table.
-    raise NotImplementedError
+    # STUB (Daniel to replace): always within budget.
+    return None

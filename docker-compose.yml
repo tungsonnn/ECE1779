@@ -1,5 +1,3 @@
-# Local integration stack: `docker compose up --build`
-#
 # NOTE FOR THE TEAM - expected compose changes as your code lands.
 # The Dockerfile should not need changes: it installs requirements.txt and
 # copies all of app/, so new code/deps are picked up on rebuild.
@@ -13,7 +11,7 @@
 # | Son    | Maybe adjust DATABASE_URL prefix (e.g. postgresql+asyncpg://)   | Depending on the driver chosen         |
 # | Daniel | Add a `ui` service (port + API_URL=http://app:8000)             | When the UI exists                     |
 # | Daniel | Rate-limit / key-pepper env vars under app.environment          | If configurable                        |
-# | Ammar  | Presidio healthcheck + depends_on condition: service_healthy    | When the real /health ping lands       |
+# | Ammar  | Presidio healthcheck + depends_on condition: service_healthy    | --------------------------------       |
 #
 # New setting? Add it to app/config.py AND app.environment below (and to
 # .env.example if it's a secret).
