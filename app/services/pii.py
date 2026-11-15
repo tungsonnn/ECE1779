@@ -46,7 +46,9 @@ def scrub(text: str) -> tuple[str, dict[str, str], dict[str, int]]:
     #     because the Anonymizer cannot produce numbered, reversible
     #     placeholders (proposal, Components and scaling).
     #   * Raise PIIDetectionUnavailable if the Analyzer cannot be reached.
-    raise NotImplementedError
+    # STUB (Hira to replace): detects nothing, passes text through unchanged.
+    # Only safe while the LLM is in echo mode - see app/services/llm_client.py.
+    return text, {}, {}
 
 
 def restore(text: str, placeholder_map: dict[str, str]) -> str:
@@ -57,4 +59,8 @@ def restore(text: str, placeholder_map: dict[str, str]) -> str:
     #   * Known risk (proposal, Risks and mitigations): the model may alter or
     #     drop a placeholder. Leave an unmatched placeholder as-is and log that
     #     it happened. Never guess a value.
-    raise NotImplementedError
+    # STUB (Hira may refine, e.g. logging unmatched placeholders): plain
+    # substitution of each placeholder with its real value.
+    for placeholder, real_value in placeholder_map.items():
+        text = text.replace(placeholder, real_value)
+    return text

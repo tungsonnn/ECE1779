@@ -17,6 +17,11 @@ Two properties must survive the real implementation:
 """
 
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 class AuditUnavailable(RuntimeError):
     """Raised when an audit row cannot be written.
 
@@ -36,7 +41,8 @@ def insert_pending(request_id: str, tenant_id: str) -> None:
     #     the request rather than letting text leave unrecorded.
     #   * A log line to stdout is an adequate placeholder until the table
     #     exists, and it keeps the two-phase ordering visible in the terminal.
-    raise NotImplementedError
+    # STUB (Son to replace): log instead of writing a row.
+    logger.info("audit pending request_id=%s tenant=%s", request_id, tenant_id)
 
 
 def complete_row(
@@ -56,4 +62,8 @@ def complete_row(
     #     the full set with Ammar before any dashboard query depends on it.
     #   * Leaving pending rows unresolved would make error-rate queries
     #     undercount failures and show phantom in-flight requests.
-    raise NotImplementedError
+    # STUB (Son to replace): log instead of updating the row.
+    logger.info(
+        "audit complete request_id=%s status=%s latency_ms=%d pii_counts=%s",
+        request_id, status, latency_ms, pii_counts,
+    )

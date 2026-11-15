@@ -86,9 +86,6 @@ class PipelineContext:
     @property
     def pii_entities_found(self) -> int:
         """Total entities detected across all types, for the response body."""
-        # TODO: Sum the values of pii_counts.
-        #       pii_counts is per entity type ({"EMAIL_ADDRESS": 2}) rather
-        #       than a bare integer because Son's audit table and Hira's
-        #       accuracy measurement both need the breakdown. This property is
-        #       just the rollup for the API response.
-        raise NotImplementedError
+        # pii_counts is per entity type ({"EMAIL_ADDRESS": 2}) rather than a
+        # bare integer because Son's audit table and Hira's accuracy measurement both need the breakdown. This is just the rollup.
+        return sum(self.pii_counts.values())

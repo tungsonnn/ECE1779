@@ -18,35 +18,31 @@ class Settings:
     """
 
     def __init__(self) -> None:
-        # TODO: Read each setting from the environment and assign it to self.
-        #
-        #   self.app_env              APP_ENV              default "local"
-        #       Label for which deployment this is; surface it in /health and
-        #       logs. Avoid branching application logic on it.
-        #   self.llm_url              LLM_URL              default ""
-        #       Where to POST sanitized prompts. Empty is meaningful: it means
-        #       "no provider configured" and llm_client treats it as echo mode.
-        #   self.llm_timeout_seconds  LLM_TIMEOUT_SECONDS  default "30"
-        #       Bounded wait on the provider call. Environment variables are
-        #       always strings, so this one needs an explicit float() cast.
-        #   self.database_url         DATABASE_URL         default ""
-        #       Postgres connection string. Empty until Son's tables exist.
-        #
-        # Defaults should make a bare local run work with no .env file at all.
-        # Never put a real credential in a default: defaults are committed to
-        # git, and secrets come from the environment (Kubernetes Secrets on
-        # DOKS).
-        raise NotImplementedError
+        # Deployment label (local / compose / doks). Shown in /health and logs;
+        self.app_env: str = os.environ.get("APP_ENV", "local")
+
+        # Where sanitized prompts are POSTed. Empty means "no provider configured" -> llm_client runs in echo mode.
+        self.llm_url: str = os.environ.get("LLM_URL", "")
+
+        self.llm_timeout_seconds: float = float(
+            os.environ.get("LLM_TIMEOUT_SECONDS", "30")
+        )
+
+        # Postgres connection string
+        self.database_url: str = os.environ.get("DATABASE_URL", "")
+
+        # Presidio Analyzer address, used by services/pii.py. The default is the Docker Compose service name.
+        self.presidio_url: str = os.environ.get(
+            "PRESIDIO_URL", "http://presidio-analyzer:3000"
+        )
+
+        # logging
+        self.log_level: str = os.environ.get("LOG_LEVEL", "INFO").upper()
+
+    # TODO (later): a validate() that raises at startup when a required setting
+    #       is empty and APP_ENV is not "local", so misconfiguration fails fast
+    #       instead of surfacing on the first request.
 
 
-# TODO: Construct the single shared instance the rest of the app imports:
-#           settings = Settings()
-#       Import it as `from app.config import settings`; never re-instantiate
-#       Settings elsewhere.
-
-# TODO (later, as those pieces land): add settings for
-#       PRESIDIO_URL  - Hira needs the Analyzer's address in services/pii.py
-#       LOG_LEVEL     - lets Son raise verbosity without a code change
-#       and a validate() that raises at startup when a required setting is
-#       empty and APP_ENV is not "local", so misconfiguration fails fast
-#       instead of surfacing on the first request.
+# Single shared instance. Import as `from app.config import settings
+settings = Settings()
