@@ -3,3 +3,6 @@ __pycache__/
 *.pyc
 .env
 .pytes_cache/
+
+# Local Python virtual environment (for running tests)
+.venv/

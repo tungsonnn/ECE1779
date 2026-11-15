@@ -28,6 +28,12 @@ class Settings:
             os.environ.get("LLM_TIMEOUT_SECONDS", "30")
         )
 
+        # Which model the provider should run. DigitalOcean serves many models, so the name must be sent with every request.
+        self.llm_model: str = os.environ.get("LLM_MODEL", "openai-gpt-oss-120b")
+
+        # Provider access key. A secret: .env locally, a Kubernetes Secret on DOKS. Never commit it.
+        self.llm_api_key: str = os.environ.get("LLM_API_KEY", "")
+
         # Postgres connection string
         self.database_url: str = os.environ.get("DATABASE_URL", "")
 
