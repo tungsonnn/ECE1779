@@ -15,7 +15,12 @@ from fastapi import HTTPException, status
 
 from app.schemas import Tenant
 
+# Assuming we're generating 128-bit API keys, SHA-256 is safe to use for hashing API keys
+# We could also use HMAC-SHA-256 if we keep a server side secret using a secrets manager
+import hashlib
+
 logger = logging.getLogger(__name__)
+
 
 # STUB (Daniel to replace): demo keys so the team can run the pipeline before
 # Son's tenants/api_keys tables exist. Two tenants on purpose, to surface
@@ -26,30 +31,54 @@ _DEMO_KEYS: dict[str, Tenant] = {
     "demo-key-b": Tenant(id=2, name="Demo Team B"),
 }
 
+# Returns the hex representation of a SHA256 hashed key
+def hash_key_sha256(key: str) -> str:
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()
+
+# Creating a dict of the hashed demo keys for testing purposes, in prod should 
+# refer to our actual hashed keys from the DB
+_HASHED_KEYS: dict[str, Tenant] = {
+    hash_key_sha256(k): tenant for k, tenant in _DEMO_KEYS.items()
+}
+
+def _unauthorized(detail: str) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=detail,
+        headers={"WWW-Authenticate": "ApiKey"}
+    )
+
+def _overlimit(detail: str) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        detail=detail,
+        headers={"Retry-After", "60"} # Placeholder until actual rate limits determined
+    )
 
 def authenticate(api_key: str | None) -> Tenant:
     """Resolve a presented API key to the tenant that owns it.
 
+    Raw keys are never stored or logged; the presented key is hashed and
+    looked up against stored hashes.
+
     Raises HTTPException 401 when the key is missing or unknown.
     """
-    # TODO: Implement tenant lookup.
-    #   * Missing or empty api_key -> raise HTTPException(401, "Missing
-    #     X-API-Key header"). Unknown key -> raise HTTPException(401, "Invalid
-    #     API key").
-    #   * Hash the presented key and compare against a stored hash. Raw keys
-    #     are never stored or logged (proposal: "hashed per-tenant API keys").
-    #   * Blocked on Son's tenants/api_keys tables for the real lookup. Until
-    #     then, a module-level dict of demo keys unblocks everyone else. Use
-    #     two tenants, not one: a single-tenant stub hides tenant-isolation
-    #     bugs, and multi-tenancy is a graded core feature.
-    # STUB (Daniel to replace): in-memory demo key lookup.
-    if not api_key:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Missing X-API-Key header")
-    tenant = _DEMO_KEYS.get(api_key)
-    if tenant is None:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid API key")
-    return tenant
+    # STUB (Daniel to replace): lookup is backed by the in-memory _HASHED_KEYS
+    # (built from two demo tenants) until the tenants/api_keys tables land.
+    # Keep at least two tenants in the stub so tenant-isolation bugs surface.
 
+    # Whitespace-only counts as missing, not invalid.
+    if not api_key or not api_key.strip():
+        raise _unauthorized("Missing X-API-Key header")
+
+    # In prod, _HASHED_KEYS should refer to our DB of saved hashed keys
+    tenant = _HASHED_KEYS.get(hash_key_sha256(api_key))
+
+    # Same 401 for any unknown key, so responses don't reveal why it failed.
+    if tenant is None:
+        raise _unauthorized("Invalid API key")
+
+    return tenant
 
 def check_rate_limit(tenant: Tenant) -> None:
     """Reject the request if the tenant is over its request budget.
