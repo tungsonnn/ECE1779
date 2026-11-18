@@ -22,8 +22,8 @@ logger = logging.getLogger(__name__)
 # tenant-isolation bugs. Plaintext keys here are dev-only; the real version
 # compares hashes from the database.
 _DEMO_KEYS: dict[str, Tenant] = {
-    "demo-key-a": Tenant(id="tenant-a", name="Demo Team A"),
-    "demo-key-b": Tenant(id="tenant-b", name="Demo Team B"),
+    "demo-key-a": Tenant(id=1, name="Demo Team A"),
+    "demo-key-b": Tenant(id=2, name="Demo Team B"),
 }
 
 

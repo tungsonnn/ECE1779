@@ -23,18 +23,18 @@ class LLMUnavailable(RuntimeError):
     """
 
 
-async def complete(sanitized_prompt: str) -> str:
+def complete(sanitized_prompt: str) -> str:
     """Send a sanitized prompt to the provider and return its completion text.
 
-    Async because this is a network call on the request path; a blocking client
-    here would stall the event loop for every other in-flight request.
+    Sync, like the rest of the pipeline: the route runs in FastAPI's thread
+    pool, so a blocking HTTP call here only holds its own thread.
     """
     # TODO: Implement the provider call.
     #   * If settings.llm_url is empty, return an obvious echo string instead
     #     of calling out. That keeps the pipeline exercisable locally with
     #     nothing else running, and makes "no provider configured" visible in
     #     the response rather than silent.
-    #   * POST with httpx.AsyncClient and always pass an explicit timeout from
+    #   * POST with httpx.Client and always pass an explicit timeout from
     #     settings.llm_timeout_seconds. An unbounded wait ties up a worker
     #     forever, which under Kubernetes becomes failing health checks and a
     #     pod restart loop.

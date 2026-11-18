@@ -41,11 +41,11 @@ class ChatResponse(BaseModel):
 
 
 class HealthResponse(BaseModel):
-    """Body returned by GET /health.
+    """Body returned by GET /health and GET /health/deep.
 
-    `checks` maps a dependency name to its state, so one endpoint answers both
-    "are you alive?" (for the load balancer) and "what exactly is broken?" (for
-    Son's uptime check and dashboard).
+    `checks` maps a dependency name to its state, answering "what exactly is
+    broken?" for Son's uptime check and dashboard. /health (liveness) always
+    returns it empty; only /health/deep fills it in.
     """
 
     status: str
@@ -56,7 +56,7 @@ class HealthResponse(BaseModel):
 class Tenant:
     """The team an API key belongs to. Resolved by services.auth."""
 
-    id: str
+    id: int  # matches tenants.id (integer primary key) in Son's schema
     name: str
 
 
