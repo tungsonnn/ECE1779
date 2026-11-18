@@ -11,8 +11,13 @@ Docker Compose, the hosted gpt-oss-120b endpoint on DOKS - so switching
 providers is an environment change, not a code change.
 """
 
+import logging
+
+import httpx
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class LLMUnavailable(RuntimeError):
@@ -28,25 +33,46 @@ def complete(sanitized_prompt: str) -> str:
 
     Sync, like the rest of the pipeline: the route runs in FastAPI's thread
     pool, so a blocking HTTP call here only holds its own thread.
+
+    Speaks the OpenAI-style chat completions format, which DO Serverless
+    Inference (and most other providers) accept.
+
+    Never logs the prompt or the completion, even though both are sanitized.
     """
-    # TODO: Implement the provider call.
-    #   * If settings.llm_url is empty, return an obvious echo string instead
-    #     of calling out. That keeps the pipeline exercisable locally with
-    #     nothing else running, and makes "no provider configured" visible in
-    #     the response rather than silent.
-    #   * POST with httpx.Client and always pass an explicit timeout from
-    #     settings.llm_timeout_seconds. An unbounded wait ties up a worker
-    #     forever, which under Kubernetes becomes failing health checks and a
-    #     pod restart loop.
-    #   * Wrap transport and decode errors (httpx.HTTPError, ValueError) in
-    #     LLMUnavailable, so pipeline.py has exactly one exception type to
-    #     catch here.
-    #   * Validate the response shape before returning. A provider that
-    #     answers 200 with unexpected JSON should raise, not return None.
-    #   * Never log the prompt or the completion, even though both are
-    #     sanitized at this point.
-    # STUB (Ammar, provider choice with Hira): echo mode only.
+    # Echo mode: no provider configured. Keeps the pipeline runnable locally
     if not settings.llm_url:
         return f"[echo mode - no LLM_URL configured] {sanitized_prompt}"
-    # Real provider call not written yet; fail as an upstream error (502).
-    raise LLMUnavailable("LLM provider call not implemented")
+
+    body = {
+        "model": settings.llm_model,
+        "messages": [{"role": "user", "content": sanitized_prompt}],
+    }
+    headers = {"Authorization": f"Bearer {settings.llm_api_key}"}
+
+    try:
+        # Explicit timeout: an unbounded wait ties up a worker thread forever.
+        with httpx.Client(timeout=settings.llm_timeout_seconds) as client:
+            response = client.post(settings.llm_url, json=body, headers=headers)
+        # 4xx/5xx -> httpx.HTTPStatusError (a subclass of httpx.HTTPError).
+        response.raise_for_status()
+        # Only the final answer. gpt-oss also returns `reasoning_content` ignored.
+        content = response.json()["choices"][0]["message"]["content"]
+    except httpx.HTTPStatusError as exc:
+        # Status code only - the response body may echo the prompt.
+        logger.error("llm provider returned status=%d", exc.response.status_code)
+        raise LLMUnavailable(f"provider returned {exc.response.status_code}") from exc
+    except httpx.HTTPError as exc:
+        # Timeouts, DNS failures, refused connections.
+        logger.error("llm provider unreachable error=%s", type(exc).__name__)
+        raise LLMUnavailable("provider unreachable") from exc
+    except (ValueError, KeyError, IndexError, TypeError) as exc:
+        # 200 with a body we can't use: not JSON, or missing fields.
+        logger.error("llm provider returned unexpected response shape")
+        raise LLMUnavailable("unexpected provider response") from exc
+
+    # A 200 with an empty or non-string answer is still unusable.
+    if not isinstance(content, str) or not content.strip():
+        logger.error("llm provider returned empty content")
+        raise LLMUnavailable("empty completion")
+
+    return content
