@@ -29,21 +29,34 @@ _FAILING = {"down", "error"}
 
 
 @app.post("/v1/chat", response_model=ChatResponse)
-async def chat(
+def chat(
     request: ChatRequest,
-    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"), 
 ) -> ChatResponse:
     """Sanitize a prompt, send it to the LLM, and return the restored reply."""
     # No validation, logging, or error handling. ChatRequest validated the
     # body, and the pipeline raises HTTPException which FastAPI renders. default=None on the header lets a missing key reach auth as None and come back as 401.
-    return await pipeline.run(prompt=request.prompt, api_key=x_api_key)
+    return pipeline.run(prompt=request.prompt, api_key=x_api_key)
 
 
 @app.get("/health", response_model=HealthResponse)
-async def health(response: Response) -> HealthResponse:
-    """Liveness and readiness probe. Contract agreed with Son.
+def health() -> HealthResponse:
+    """Liveness probe: always 200 if the process can answer at all.
 
-    Cheap and unauthenticated: it is polled every few seconds.
+    Deliberately checks no dependencies. Kubernetes restarts a pod whose
+    liveness probe fails, and restarting a healthy proxy pod does not fix a
+    database or Analyzer outage - it only causes a restart storm. Dependency
+    state lives in /health/deep.
+    """
+    return HealthResponse(status="ok", checks={})
+
+
+@app.get("/health/deep", response_model=HealthResponse)
+def health_deep(response: Response) -> HealthResponse:
+    """Readiness probe and uptime check: 503 if a dependency is down.
+
+    Contract agreed with Son. Cheap and unauthenticated: it is polled every
+    few seconds.
     """
     checks = {
         # TODO: real check - run `SELECT 1` against DATABASE_URL with a ~1-2s

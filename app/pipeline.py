@@ -2,6 +2,12 @@
 
 OWNER: Ammar (App + Deploy).
 
+Sync by team decision: routes are plain `def`, so FastAPI runs each request
+in its thread pool and blocking clients (httpx.Client, psycopg) in the
+services are safe. Do not make run() or a route `async def` while services
+stay sync - a blocking call inside `async def` freezes every request on the
+pod.
+
 This module owns two things and delegates everything else: the ORDER of the
 steps, and the FAILURE POLICY. Each step lives in app/services/, owned by
 whoever owns that area, so once the order is frozen this should be the file
@@ -39,7 +45,7 @@ from app.services import audit, auth, llm_client, pii
 logger = logging.getLogger(__name__)
 
 
-async def run(prompt: str, api_key: str | None) -> ChatResponse:
+def run(prompt: str, api_key: str | None) -> ChatResponse:
     """Run one request through every step and return the response body.
 
     Takes plain arguments rather than a FastAPI Request object so the pipeline
@@ -58,8 +64,6 @@ async def run(prompt: str, api_key: str | None) -> ChatResponse:
     ctx = PipelineContext(request_id=request_id, tenant=tenant, raw_prompt=prompt)
 
     # 3. Scrub. Fail closed: text we couldn't scan never leaves.
-    # TODO: becomes `await pii.scrub(prompt)` once Hira makes scrub() async
-    #       (it makes a network call to Presidio; a sync call blocks the loop).
     try:
         ctx.sanitized_prompt, ctx.placeholder_map, ctx.pii_counts = pii.scrub(prompt)
     except pii.PIIDetectionUnavailable:
@@ -77,17 +81,21 @@ async def run(prompt: str, api_key: str | None) -> ChatResponse:
             status.HTTP_503_SERVICE_UNAVAILABLE, "Audit log unavailable"
         )
 
-    # 5. LLM call with sanitized text only. Data leaves the system here.
+    # From here a pending row exists, so every exit path must close it.
     try:
-        ctx.llm_reply_sanitized = await llm_client.complete(ctx.sanitized_prompt)
+        # 5. LLM call with sanitized text only. Data leaves the system here.
+        ctx.llm_reply_sanitized = llm_client.complete(ctx.sanitized_prompt)
+
+        # 6. Restore real values. Pure string substitution, no I/O.
+        ctx.restored_reply = pii.restore(ctx.llm_reply_sanitized, ctx.placeholder_map)
     except llm_client.LLMUnavailable:
         logger.error("llm unavailable request_id=%s", request_id)
-        # Close the pending row first so it doesn't stay orphaned.
-        _complete_audit(ctx, "llm_error", started)
+        _complete_audit(ctx, "error", started, error_code="llm_error")
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, "LLM provider unavailable")
-
-    # 6. Restore real values. Pure string substitution, no I/O.
-    ctx.restored_reply = pii.restore(ctx.llm_reply_sanitized, ctx.placeholder_map)
+    except Exception:
+        logger.exception("unexpected failure request_id=%s", request_id)
+        _complete_audit(ctx, "error", started, error_code="internal_error")
+        raise
 
     # 7. Close the audit row.
     latency_ms = _complete_audit(ctx, "ok", started)
@@ -104,7 +112,12 @@ async def run(prompt: str, api_key: str | None) -> ChatResponse:
     )
 
 
-def _complete_audit(ctx: PipelineContext, final_status: str, started: float) -> int:
+def _complete_audit(
+    ctx: PipelineContext,
+    final_status: str,
+    started: float,
+    error_code: str | None = None,
+) -> int:
     """Close the pending audit row; return the latency it recorded.
 
     A failure here is logged, not raised: by now the sanitized prompt has
@@ -114,11 +127,13 @@ def _complete_audit(ctx: PipelineContext, final_status: str, started: float) -> 
     """
     latency_ms = _elapsed_ms(started)
     try:
-        audit.complete_row(ctx.request_id, final_status, latency_ms, ctx.pii_counts)
+        audit.complete_row(
+            ctx.request_id, final_status, latency_ms, ctx.pii_counts, error_code
+        )
     except audit.AuditUnavailable:
         logger.error(
-            "audit complete failed request_id=%s status=%s",
-            ctx.request_id, final_status,
+            "audit complete failed request_id=%s status=%s error_code=%s",
+            ctx.request_id, final_status, error_code,
         )
     return latency_ms
 

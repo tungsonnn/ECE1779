@@ -30,7 +30,7 @@ class AuditUnavailable(RuntimeError):
     """
 
 
-def insert_pending(request_id: str, tenant_id: str) -> None:
+def insert_pending(request_id: str, tenant_id: int) -> None:
     """Record that a request is about to be sent to the provider.
 
     Called after PII has been scrubbed and before the LLM call.
@@ -50,6 +50,7 @@ def complete_row(
     status: str,
     latency_ms: int,
     pii_counts: dict[str, int],
+    error_code: str | None = None,
 ) -> None:
     """Close out the row opened by insert_pending().
 
@@ -57,13 +58,17 @@ def complete_row(
     row reaches a terminal state.
     """
     # TODO: Update the row matching request_id with the final status, the
-    #       latency, and the per-type entity counts.
-    #   * Status values the pipeline passes today: "ok" and "llm_error". Agree
-    #     the full set with Ammar before any dashboard query depends on it.
+    #       error code, the latency, and the per-type entity counts.
+    #   * Agreed values (status / error_code):
+    #       "ok"    / None              - success
+    #       "error" / "llm_error"       - provider call failed (502)
+    #       "error" / "internal_error"  - unexpected failure after the row exists
+    #     Failures before insert_pending() (auth, rate limit, PII, audit
+    #     insert) never reach here: there is no row to close.
     #   * Leaving pending rows unresolved would make error-rate queries
     #     undercount failures and show phantom in-flight requests.
     # STUB (Son to replace): log instead of updating the row.
     logger.info(
-        "audit complete request_id=%s status=%s latency_ms=%d pii_counts=%s",
-        request_id, status, latency_ms, pii_counts,
+        "audit complete request_id=%s status=%s error_code=%s latency_ms=%d pii_counts=%s",
+        request_id, status, error_code, latency_ms, pii_counts,
     )
