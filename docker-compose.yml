@@ -34,6 +34,19 @@ services:
       presidio-analyzer:
         condition: service_started
 
+  ui:
+    build: ./ui
+    ports:
+      - "8501:8501"
+    environment:
+      API_URL: http://app:8000
+      UI_ENV: compose
+      UI_DEMO_MODE: "true"
+      UI_ALLOW_CUSTOM_API_URL: "false"
+    depends_on:
+      app:
+        condition: service_started
+
   presidio-analyzer:
     # Pinned to match k8s/base/presidio.yaml, so local and DOKS run the same version.
     image: mcr.microsoft.com/presidio-analyzer:2.2.362
