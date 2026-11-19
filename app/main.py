@@ -12,6 +12,7 @@ from fastapi import FastAPI, Header, Response, status
 from app import pipeline
 from app.config import settings
 from app.schemas import ChatRequest, ChatResponse, HealthResponse
+from app.services import health as health_checks  # aliased: main.py also defines a health() route
 
 # Configure logging - stdout is the log destination under Docker and Kubernetes - never write to files.
 logging.basicConfig(
@@ -24,7 +25,7 @@ logger.info("starting app_env=%s log_level=%s", settings.app_env, settings.log_l
 app = FastAPI(title="LLM PII Proxy")
 
 
-# Check values that mean a dependency is broken. Anything else ("ok", "not_implemented", "echo_mode") does not fail the health check.
+# Check values that mean a dependency is broken. Anything else ("ok", "not_configured", "echo_mode") does not fail the health check.
 _FAILING = {"down", "error"}
 
 
@@ -59,14 +60,8 @@ def health_deep(response: Response) -> HealthResponse:
     few seconds.
     """
     checks = {
-        # TODO: real check - run `SELECT 1` against DATABASE_URL with a ~1-2s
-        #       timeout; "ok" on success, "down" on timeout/connection error.
-        #       A set URL alone is not enough: it must be reachable.
-        "database": "not_implemented",
-        # TODO: real check - GET {settings.presidio_url}/health via httpx with a
-        #       ~1-2s timeout; "ok" on 200, "down" otherwise. Doesn't depend on
-        #       Hira's code, so it can land as soon as Compose runs Presidio.
-        "pii_analyzer": "not_implemented",
+        "database": health_checks.check_database(),
+        "pii_analyzer": health_checks.check_pii_analyzer(),
         # Deliberately NOT pinged: external and paid, and a vendor outage
         # shouldn't pull our pods from rotation (the pipeline returns 502).
         "llm": "ok" if settings.llm_url else "echo_mode",
