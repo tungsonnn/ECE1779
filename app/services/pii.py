@@ -65,7 +65,15 @@ SCORE_THRESHOLD = 0.35
 PRESIDIO_TIMEOUT_SECONDS = 5.0
 
 # Matches placeholders we create, e.g. "<PERSON_1>", "<EMAIL_ADDRESS_12>".
-_PLACEHOLDER_RE = re.compile(r"<([A-Z][A-Z_]*)_(\d+)>")
+# Also matches the backslash-escaped forms a model sometimes writes back,
+# "\<PERSON_1>" and "\<PERSON_1\>" (seen with gpt-oss-120b, mostly in Markdown
+# tables and lists). Group 1 is the entity type, group 2 the number.
+_PLACEHOLDER_RE = re.compile(r"\\?<([A-Z][A-Z_]*)_(\d+)\\?>")
+
+
+def _canonical(match: re.Match[str]) -> str:
+    """The placeholder exactly as scrub() wrote it, without any backslashes."""
+    return f"<{match.group(1)}_{match.group(2)}>"
 
 
 class PIIDetectionUnavailable(RuntimeError):
@@ -104,7 +112,7 @@ def scrub(text: str) -> tuple[str, dict[str, str], dict[str, int]]:
     #    If the user's own text already contains something that looks like a
     #    placeholder (e.g. they typed "<PERSON_1>"), that name is skipped, so
     #    restore() can never confuse their text with a real value.
-    already_in_text = {m.group(0) for m in _PLACEHOLDER_RE.finditer(text)}
+    already_in_text = {_canonical(m) for m in _PLACEHOLDER_RE.finditer(text)}
     value_to_placeholder: dict[tuple[str, str], str] = {}
     next_number: dict[str, int] = {}
     pii_counts: dict[str, int] = {}
@@ -140,15 +148,20 @@ def restore(text: str, placeholder_map: dict[str, str]) -> str:
     changed a placeholder (e.g. "<PERSON_3>" when only two exist), it is left
     exactly as it is and logged. We never guess a value: a wrong guess could
     show one person's data in place of another's.
+
+    One change by the model is undone here because it is unambiguous: a
+    backslash put in front of "<" or ">" ("\\<PERSON_1\\>"). The type and
+    number are untouched, so we know exactly which value was meant, and the
+    backslashes are removed together with the placeholder.
     """
     unmatched: list[str] = []
 
     def _swap(match: re.Match[str]) -> str:
-        placeholder = match.group(0)
+        placeholder = _canonical(match)
         if placeholder in placeholder_map:
             return placeholder_map[placeholder]
         unmatched.append(placeholder)
-        return placeholder
+        return match.group(0)
 
     restored = _PLACEHOLDER_RE.sub(_swap, text)
 

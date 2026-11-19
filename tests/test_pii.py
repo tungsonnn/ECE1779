@@ -234,5 +234,38 @@ def test_restore_ignores_changed_placeholders():
     assert pii.restore("Hi Person 1", {"<PERSON_1>": "John"}) == "Hi Person 1"
 
 
+def test_restore_removes_a_backslash_the_model_put_before_a_placeholder():
+    # Seen with the real gpt-oss-120b: it wrote "\\<PERSON_1> will bring ...".
+    mapping = {"<PERSON_1>": "Sara Khan", "<LOCATION_1>": "Toronto"}
+    reply = "\\<PERSON_1> will bring wine to the meeting in \\<LOCATION_1>."
+    assert pii.restore(reply, mapping) == "Sara Khan will bring wine to the meeting in Toronto."
+
+
+def test_restore_handles_both_brackets_escaped():
+    # Seen with the real gpt-oss-120b inside a Markdown table: "\\<LOCATION_1\\>".
+    mapping = {"<PERSON_1>": "Sara Khan", "<LOCATION_1>": "Toronto"}
+    reply = "| \\<PERSON_1\\> | \\<LOCATION_1\\> |"
+    assert pii.restore(reply, mapping) == "| Sara Khan | Toronto |"
+
+
+def test_restore_leaves_unknown_escaped_placeholders_and_logs_them(caplog):
+    with caplog.at_level(logging.WARNING):
+        result = pii.restore("Hi \\<PERSON_9\\>", {"<PERSON_1>": "Sara Khan"})
+
+    assert result == "Hi \\<PERSON_9\\>"  # unknown: left exactly as the model wrote it
+    assert "<PERSON_9>" in caplog.text
+    assert "Sara Khan" not in caplog.text
+
+
+def test_escaped_placeholder_typed_by_user_is_never_reused(monkeypatch):
+    text = "Ask \\<PERSON_1\\> about Jane Doe"
+    fake_presidio(monkeypatch, [finding("PERSON", 23, 31, 0.85)])
+    sanitized, mapping, _ = pii.scrub(text)
+
+    assert sanitized == "Ask \\<PERSON_1\\> about <PERSON_2>"
+    assert mapping == {"<PERSON_2>": "Jane Doe"}
+    assert pii.restore(sanitized, mapping) == text
+
+
 def test_restore_with_no_placeholders_is_unchanged():
     assert pii.restore("All good!", {}) == "All good!"
