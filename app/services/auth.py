@@ -45,7 +45,7 @@ def _unauthorized(detail: str) -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail=detail,
-        headers={"WWW-Authenticate": "ApiKey"}
+        headers={"WWW-Authenticate", "ApiKey"}
     )
 
 def _overlimit(detail: str) -> HTTPException:
@@ -93,4 +93,10 @@ def check_rate_limit(tenant: Tenant) -> None:
     #     them hold across replicas").
     #   * Blocked on Son's rate-limit table.
     # STUB (Daniel to replace): always within budget.
+
+    if count > limit:
+        raise _overlimit(
+            f"Rate limit of {limit} requests/second exceeded",
+            retry_after = retry_after,
+        )
     return None

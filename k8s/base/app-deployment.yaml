@@ -1,0 +1,61 @@
+# The FastAPI proxy - Deployment keeps `replicas` copies running and replaces any pod that dies or fails its liveness probe.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: proxy
+  labels:
+    app: proxy
+spec:
+  replicas: 2
+  # Which pods this Deployment owns. Must match template.metadata.labels.
+  selector:
+    matchLabels:
+      app: proxy
+  template:
+    metadata:
+      labels:
+        app: proxy
+    spec:
+      containers:
+        - name: proxy
+          # Bump the tag (v2, v3, ...) on push; reusing a tag means nodes may keep running the old image.
+          image: registry.digitalocean.com/promptveil-registry/app:v1
+          ports:
+            - containerPort: 8000
+          env:
+            - name: APP_ENV
+              value: doks
+            - name: LOG_LEVEL
+              value: INFO
+            # Setting LLM_API_KEY: no secrets.yaml needed. This will be set before deployment 
+            # Using kubectl create secret generic llm-secret --from-literal=LLM_API_KEY='your-real-key'
+            # DOKS will manage encryption at rest automatically for us
+            - name: LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: llm-secret
+                  key: LLM_API_KEY
+            # LLM_URL  not set yet -> echo mode. will be set in configmap
+          resources:
+            # Reserved on the node by the scheduler.
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            # Hard cap: exceeding it gets the pod OOMKilled, which protects the node's memory for Presidio and Postgres.
+            limits:
+              memory: 256Mi
+          # Liveness
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          # Readiness: should this pod get traffic? Failing removes it from the Service without restarting it.
+          readinessProbe:
+            httpGet:
+              path: /health/deep
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
