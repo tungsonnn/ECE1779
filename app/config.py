@@ -37,6 +37,11 @@ class Settings:
         # Postgres connection string
         self.database_url: str = os.environ.get("DATABASE_URL", "")
 
+        # Per-tenant request budget over a sliding 1-minute window (services/auth.py).
+        self.rate_limit_per_minute: int = int(
+            os.environ.get("RATE_LIMIT_PER_MINUTE", "60")
+        )
+
         # Presidio Analyzer address, used by services/pii.py. The default is the Docker Compose service name.
         self.presidio_url: str = os.environ.get(
             "PRESIDIO_URL", "http://presidio-analyzer:3000"

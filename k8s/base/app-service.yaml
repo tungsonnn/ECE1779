@@ -6,12 +6,22 @@ metadata:
   name: proxy
   labels:
     app: proxy
+  annotations:
+    # Contains the custom UUID of the certificate from Cloudflare
+    service.beta.kubernetes.io/do-loadbalancer-certificate-id: "c1607ad0-be87-4b3a-bd17-f93fda4aed38"
+    # Protocol for LB -> pods
+    # HTTPS traffic ends at LB -> LB uses HTTP to communicate with pods
+    service.beta.kubernetes.io/do-loadbalancer-protocol: "http"
+    # Port LB should use to terminate TLS
+    service.beta.kubernetes.io/do-loadbalancer-tls-ports: "443"
+
 spec:
   type: LoadBalancer
   # Route to pods carrying this label, i.e. the proxy Deployment's pods.
   selector:
     app: proxy
+  # Changing from http -> https and port 80 -> port 443 for https enforcement
   ports:
-    - name: http
-      port: 80          # public side, on the load balancer
+    - name: https
+      port: 443         # public side, TLS terminated at the load balancer
       targetPort: 8000  # uvicorn inside the container
