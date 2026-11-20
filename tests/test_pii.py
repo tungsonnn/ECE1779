@@ -187,6 +187,23 @@ def test_request_asks_only_for_our_entities_and_sends_the_api_key_detector(monke
     assert sent["timeout"] == pii.PRESIDIO_TIMEOUT_SECONDS
 
 
+def test_request_sends_the_allow_list_of_label_words(monkeypatch):
+    sent = {}
+
+    def capture(url, json=None, timeout=None):
+        sent.update(body=json)
+        return httpx.Response(200, request=httpx.Request("POST", url), json=[])
+
+    monkeypatch.setattr(pii.httpx, "post", capture)
+    pii.scrub("Name, City, Email")
+
+    allow = sent["body"]["allow_list"]
+    # Words the real analyzer mistook for PII ("City" -> LOCATION, "Email" -> PERSON).
+    assert "City" in allow and "Email" in allow and "EMAIL" in allow
+    # A real city and a real surname must never be allow-listed.
+    assert "Mobile" not in allow and "Price" not in allow and "Toronto" not in allow
+
+
 # --------------------------------------------------------- API-key patterns
 
 

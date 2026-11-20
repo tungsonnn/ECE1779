@@ -54,6 +54,19 @@ API_KEY_RECOGNIZER = {
     ],
 }
 
+# Ordinary label words that Presidio's language model mistakes for a person or
+# a place when they start a line or sit in a list ("Name, City, Email: ...").
+# Found by running the real model: "City" became <LOCATION_1> and "Email"
+# became <PERSON_1>, which changed the meaning of the prompt. Presidio skips a
+# finding whose text is exactly one of these words. Only words that are not
+# plausible names or places belong here ("Mobile" and "Price" are left out on
+# purpose: one is a city, the other a surname).
+_LABEL_WORDS = [
+    "Address", "Bcc", "City", "Column", "Email", "Order", "Patient", "Postal",
+    "Province", "Token",
+]
+ALLOW_LIST = _LABEL_WORDS + [w.upper() for w in _LABEL_WORDS]
+
 # Results below this confidence are ignored. Kept low on purpose: for a privacy
 # proxy, hiding a word that wasn't PII is much cheaper than leaking one that was.
 # (Presidio scores weak phone-number matches around 0.4.) Revisit with the
@@ -187,6 +200,7 @@ def _analyze(text: str) -> list[dict]:
         "entities": ENTITIES,
         "score_threshold": SCORE_THRESHOLD,
         "ad_hoc_recognizers": [API_KEY_RECOGNIZER],
+        "allow_list": ALLOW_LIST,
     }
     try:
         response = httpx.post(
