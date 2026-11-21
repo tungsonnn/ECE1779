@@ -13,6 +13,7 @@ CREATE TABLE api_keys (
 
 CREATE TABLE audit_log (
    id            BIGSERIAL PRIMARY KEY,
+   request_id    UUID NOT NULL UNIQUE,             -- set by the proxy; links insert_pending() to complete_row()
    tenant_id     INT NOT NULL REFERENCES tenants(id),
    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
    status        TEXT NOT NULL DEFAULT 'pending', CHECK(status IN ('pending', 'ok', 'error')), -- pending | ok | error
