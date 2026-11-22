@@ -17,9 +17,17 @@ Two properties must survive the real implementation:
 """
 
 
+import json
 import logging
 
+import psycopg
+
+from app.config import settings
+
 logger = logging.getLogger(__name__)
+
+# Fail fast: a slow database should turn into a 503, not a hung request.
+_CONNECT_TIMEOUT_SECONDS = 2
 
 
 class AuditUnavailable(RuntimeError):
@@ -35,13 +43,14 @@ def insert_pending(request_id: str, tenant_id: int) -> None:
 
     Called after PII has been scrubbed and before the LLM call.
     """
-    # TODO: Insert a row keyed on request_id with status "pending" and the
-    #       tenant id, then return.
-    #   * Raise AuditUnavailable if the write fails, so the pipeline refuses
-    #     the request rather than letting text leave unrecorded.
-    #   * A log line to stdout is an adequate placeholder until the table
-    #     exists, and it keeps the two-phase ordering visible in the terminal.
-    # STUB (Son to replace): log instead of writing a row.
+    try:
+        with _connect() as conn:
+            conn.execute(
+                "INSERT INTO audit_log (request_id, tenant_id) VALUES (%s, %s)",
+                (request_id, tenant_id),
+            )
+    except psycopg.Error as exc:
+        raise AuditUnavailable("audit insert failed") from exc
     logger.info("audit pending request_id=%s tenant=%s", request_id, tenant_id)
 
 
@@ -57,18 +66,36 @@ def complete_row(
     Called on both the success path and the LLM-failure path, so every pending
     row reaches a terminal state.
     """
-    # TODO: Update the row matching request_id with the final status, the
-    #       error code, the latency, and the per-type entity counts.
-    #   * Agreed values (status / error_code):
-    #       "ok"    / None              - success
-    #       "error" / "llm_error"       - provider call failed (502)
-    #       "error" / "internal_error"  - unexpected failure after the row exists
-    #     Failures before insert_pending() (auth, rate limit, PII, audit
-    #     insert) never reach here: there is no row to close.
-    #   * Leaving pending rows unresolved would make error-rate queries
-    #     undercount failures and show phantom in-flight requests.
-    # STUB (Son to replace): log instead of updating the row.
+    # Agreed values (status / error_code):
+    #   "ok"    / None              - success
+    #   "error" / "llm_error"       - provider call failed (502)
+    #   "error" / "internal_error"  - unexpected failure after the row exists
+    try:
+        with _connect() as conn:
+            cur = conn.execute(
+                """
+                UPDATE audit_log
+                SET status = %s, latency_ms = %s, entity_counts = %s, error_code = %s
+                WHERE request_id = %s
+                """,
+                (status, latency_ms, json.dumps(pii_counts), error_code, request_id),
+            )
+            if cur.rowcount != 1:
+                raise AuditUnavailable(f"no pending row for request_id={request_id}")
+    except psycopg.Error as exc:
+        raise AuditUnavailable("audit complete failed") from exc
     logger.info(
-        "audit complete request_id=%s status=%s error_code=%s latency_ms=%d pii_counts=%s",
-        request_id, status, error_code, latency_ms, pii_counts,
+        "audit complete request_id=%s status=%s error_code=%s latency_ms=%d",
+        request_id, status, error_code, latency_ms,
+    )
+
+
+def _connect() -> psycopg.Connection:
+    """Open a short-lived connection; `with` commits on success.
+
+    One connection per call is simple and fine at our traffic. Swap in a pool
+    (psycopg_pool) later if latency shows it matters.
+    """
+    return psycopg.connect(
+        settings.database_url, connect_timeout=_CONNECT_TIMEOUT_SECONDS
     )
