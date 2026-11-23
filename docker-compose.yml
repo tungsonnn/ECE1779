@@ -7,8 +7,7 @@
 # | Hira   | Add `LLM_API_KEY: ${LLM_API_KEY}` under app.environment, set    | When the real LLM is wired in          |
 # |        | LLM_URL (key goes in .env, never in this file)                  |                                        |
 # | Hira   | presidio-analyzer: `image:` -> `build:`                         | Only if building a custom Analyzer img |
-# | Son    | Add a `migrate` service; app depends_on it                      | When migrations exist                  |
-# | Son    | Maybe adjust DATABASE_URL prefix (e.g. postgresql+asyncpg://)   | Depending on the driver chosen         |
+# # | Son    | Maybe adjust DATABASE_URL prefix (e.g. postgresql+asyncpg://)   | Depending on the driver chosen         |
 # | Daniel | Add a `ui` service (port + API_URL=http://app:8000)             | When the UI exists                     |
 # | Daniel | Rate-limit / key-pepper env vars under app.environment          | If configurable                        |
 # | Ammar  | Presidio healthcheck + depends_on condition: service_healthy    | --------------------------------       |
@@ -49,9 +48,13 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-devpass}
       POSTGRES_DB: proxy
     ports:
-      - "5433:5432"                    # host 5433
+      - "5433:5432"                    # host 5433 to avoid clashing with a local Postgres
     volumes:
       - pgdata:/var/lib/postgresql/data
+      # Runs once, only when pgdata is empty. After a schema change: docker compose down -v
+      - ./docs/database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./docs/database/metrics.sql:/docker-entrypoint-initdb.d/02-metrics.sql:ro
+      - ./docs/database/seed-dev.sql:/docker-entrypoint-initdb.d/03-seed-dev.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U proxy -d proxy"]
       interval: 5s
