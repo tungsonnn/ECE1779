@@ -1,0 +1,64 @@
+# Presidio Analyzer - finds PII in prompts for services/pii.py.
+# Stateless, so a plain Deployment. Two replicas (proposal)
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: presidio-analyzer
+  labels:
+    app: presidio-analyzer
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: presidio-analyzer
+  template:
+    metadata:
+      labels:
+        app: presidio-analyzer
+    spec:
+      containers:
+        - name: presidio-analyzer
+          # Pinned: "latest" could change behaviour under us between deploys.
+          image: mcr.microsoft.com/presidio-analyzer:2.2.362
+          ports:
+            - containerPort: 3000
+          resources:
+            # The spaCy NLP model loaded at startup needs ~1Gi.
+            requests:
+              cpu: 250m
+              memory: 1Gi
+            limits:
+              memory: 2Gi
+          # Model loading is slow: allow up to ~3 minutes for liveness
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            periodSeconds: 5
+            failureThreshold: 36
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            periodSeconds: 5
+---
+# In-cluster address http://presidio-analyzer:3000, matching the PRESIDIO_URL
+# default in app/config.py. ClusterIP = never public: raw prompts go here.
+apiVersion: v1
+kind: Service
+metadata:
+  name: presidio-analyzer
+  labels:
+    app: presidio-analyzer
+spec:
+  selector:
+    app: presidio-analyzer
+  ports:
+    - port: 3000
+      targetPort: 3000

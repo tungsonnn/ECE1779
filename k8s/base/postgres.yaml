@@ -1,0 +1,103 @@
+# PostgreSQL for audit logs, tenants and API keys (proposal: StatefulSet + PVC on a DO Volume).
+# One replica
+#
+#   postgres-secret  - POSTGRES_PASSWORD, DATABASE_URL
+#   postgres-init    - schema.sql, metrics.sql, seed-dev.sql from docs/database/
+
+# Headless Service (clusterIP: None): DNS name "postgres" resolves straight to
+# the pod's IP. A StatefulSet needs one as its stable network identity.
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  labels:
+    app: postgres
+spec:
+  clusterIP: None
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  labels:
+    app: postgres
+spec:
+  # Must name the headless Service above.
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: proxy
+            - name: POSTGRES_DB
+              value: proxy
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_PASSWORD
+            # Subfolder: a fresh DO volume contains lost+found, and Postgres
+            # refuses to initialise into a non-empty directory.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            # Same as Compose: scripts here run once, only when PGDATA is empty.
+            # After a schema change, the PVC has to be deleted for them to rerun.
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+          # Restart Postgres if it stops answering.
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "proxy", "-d", "proxy"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          # Don't route traffic until it accepts connections (first start runs the init scripts).
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "proxy", "-d", "proxy"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+      volumes:
+        - name: init
+          configMap:
+            name: postgres-init
+  # The StatefulSet creates the PVC itself (data-postgres-0) and reattaches the
+  # same one if the pod is replaced or moved to another node.
+  # No storageClassName: each cluster uses its default
+  # (do-block-storage on DOKS = a DigitalOcean Volume, standard on minikube).
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        # ReadWriteOnce: a DO volume attaches to one node at a time.
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Gi
