@@ -23,7 +23,9 @@ services:
     environment:
       APP_ENV: compose
       LOG_LEVEL: INFO
-      LLM_URL: ""                      # empty = echo mode
+      LLM_URL: ${LLM_URL:-}            # empty = echo mode; set in .env to use the real LLM
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-openai-gpt-oss-120b}
       PRESIDIO_URL: http://presidio-analyzer:3000
       DATABASE_URL: postgresql://proxy:${POSTGRES_PASSWORD:-devpass}@postgres:5432/proxy
     depends_on:

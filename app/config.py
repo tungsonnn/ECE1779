@@ -28,6 +28,12 @@ class Settings:
             os.environ.get("LLM_TIMEOUT_SECONDS", "30")
         )
 
+        # DO Model Access Key
+        self.llm_api_key: str = os.environ.get("LLM_API_KEY", "")
+
+        # Model ID sent in each request, is configurable.
+        self.llm_model: str = os.environ.get("LLM_MODEL", "openai-gpt-oss-120b")
+
         # Postgres connection string
         self.database_url: str = os.environ.get("DATABASE_URL", "")
 
