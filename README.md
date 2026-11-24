@@ -80,3 +80,31 @@ Hira is blocked on nobody: PII sanitize and restore only need the Presidio conta
 5. DOKS.
 6. Alerts and HTTPS.
 7. Freeze on Nov 22 
+
+## Deployment (Kubernetes)
+
+Run everything from the repo root, after `doctl kubernetes cluster kubeconfig save promptveil`
+(for local testing, use `minikube start` instead).
+
+### Before running `kubectl apply`
+
+These two aren't in the YAML files (the password is kept out of git), so create them first:
+
+    PGPASS=$(openssl rand -hex 16)
+    kubectl create secret generic postgres-secret \
+      --from-literal=POSTGRES_PASSWORD="$PGPASS" \
+      --from-literal=DATABASE_URL="postgresql://proxy:$PGPASS@postgres:5432/proxy"
+    unset PGPASS
+
+    kubectl create configmap postgres-init \
+      --from-file=01-schema.sql=docs/database/schema.sql \
+      --from-file=02-metrics.sql=docs/database/metrics.sql \
+      --from-file=03-seed-dev.sql=docs/database/seed-dev.sql
+
+Then deploy:
+
+    kubectl apply -f k8s/base/postgres.yaml -f k8s/base/presidio.yaml -f k8s/base/app-configmap.yaml
+
+Notes:
+- Without `postgres-init`, `postgres-0` stays stuck in `ContainerCreating`.
+- The init SQL runs only on an empty volume. After a schema change: `kubectl delete pvc data-postgres-0` (this wipes the data).
