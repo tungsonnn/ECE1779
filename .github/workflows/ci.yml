@@ -1,4 +1,4 @@
-name: CI
+name: CI&CD
 on:
   pull_request:
   push:
@@ -13,3 +13,25 @@ jobs:
           python-version: "3.12"
       - run: pip install -r requirements-dev.txt
       - run: pytest
+  deploy:
+    needs: test
+    # Only a push to main (i.e. a merged PR), never a PR run.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Two quick merges: finish one rollout before starting the next.
+    concurrency:
+      group: deploy-doks
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: digitalocean/action-doctl@v2
+        with:
+          token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+      - run: doctl registry login --expiry-seconds 600
+      - name: Build and push, tagged by commit ID
+        run: |
+          REPO=registry.digitalocean.com/promptveil-registry/app
+          TAG=${GITHUB_SHA::7}
+          docker build -t $REPO:$TAG -t $REPO:latest .
+          docker push $REPO:$TAG
+          docker push $REPO:latest
