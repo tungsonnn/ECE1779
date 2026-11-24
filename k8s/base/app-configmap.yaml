@@ -1,0 +1,14 @@
+# Non-secret settings for the proxy (read by app/config.py).
+# will connect to app-deployment.yml after pr#11 merges.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  labels:
+    app: proxy
+data:
+  LLM_URL: "https://inference.do-ai.run/v1/chat/completions"
+  LLM_MODEL: "openai-gpt-oss-120b"
+  LLM_TIMEOUT_SECONDS: "30"
+  PRESIDIO_URL: "http://presidio-analyzer:3000"
+  RATE_LIMIT_PER_MINUTE: "60"

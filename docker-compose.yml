@@ -35,8 +35,8 @@ services:
         condition: service_started
 
   presidio-analyzer:
-    # TODO: pin a version before the DOKS deploy.
-    image: mcr.microsoft.com/presidio-analyzer:latest
+    # Pinned to match k8s/base/presidio.yaml, so local and DOKS run the same version.
+    image: mcr.microsoft.com/presidio-analyzer:2.2.362
     ports:
       - "5002:3000"                    # host 5002 so Hira can hit it directly
     # Needs ~2 GB RAM for the NLP model.
