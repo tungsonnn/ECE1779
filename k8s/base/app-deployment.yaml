@@ -19,8 +19,10 @@ spec:
     spec:
       containers:
         - name: proxy
-          # Bump the tag (v2, v3, ...) on push; reusing a tag means nodes may keep running the old image.
-          image: registry.digitalocean.com/promptveil-registry/app:v1
+          # CD (.github/workflows/ci.yml) swaps :latest for the commit ID on every merge to main.
+          # A manual `kubectl apply` of this file gets :latest = the newest main build, never an old tag.
+          image: registry.digitalocean.com/promptveil-registry/app:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 8000
           env:
@@ -28,7 +30,21 @@ spec:
               value: doks
             - name: LOG_LEVEL
               value: INFO
-            # LLM_URL / LLM_API_KEY not set yet -> echo mode. will be set in configmap and serect 
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: DATABASE_URL
+            - name: LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: llm-secret
+                  key: LLM_API_KEY
+                  optional: true   # pods still start without it; LLM calls then fail with 502
+          # LLM_URL, LLM_MODEL, PRESIDIO_URL, ... (k8s/base/app-configmap.yaml)
+          envFrom:
+            - configMapRef:
+                name: app-config
           resources:
             # Reserved on the node by the scheduler.
             requests:
