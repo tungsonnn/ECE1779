@@ -20,6 +20,22 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 
+# Sent with every request, before the user's (sanitized) prompt.
+# Why: services.pii.restore() can only put a value back if the placeholder
+# comes back unchanged. In testing, gpt-oss-120b sometimes wrote "\\<PERSON_1\\>"
+# with backslashes inside Markdown tables and lists. restore() now tolerates
+# that, and this prompt asks the model not to do it in the first place.
+SYSTEM_PROMPT = (
+    "Some private details in the user's message have been replaced with "
+    "placeholders such as <PERSON_1> or <EMAIL_ADDRESS_2>. Treat each placeholder "
+    "as the real value it stands for. When you use one in your answer, copy it "
+    "exactly, character for character: keep the angle brackets, do not add "
+    "backslashes or any other escape characters, and do not translate, rename, "
+    "renumber or reformat it. Do not invent new placeholders, and do not comment "
+    "on the placeholders."
+)
+
+
 class LLMUnavailable(RuntimeError):
     """Raised when the provider is unreachable or returns an unusable response.
 
@@ -45,7 +61,10 @@ def complete(sanitized_prompt: str) -> str:
 
     body = {
         "model": settings.llm_model,
-        "messages": [{"role": "user", "content": sanitized_prompt}],
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": sanitized_prompt},
+        ],
     }
     headers = {"Authorization": f"Bearer {settings.llm_api_key}"}
 
