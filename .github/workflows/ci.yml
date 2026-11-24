@@ -35,3 +35,11 @@ jobs:
           docker build -t $REPO:$TAG -t $REPO:latest .
           docker push $REPO:$TAG
           docker push $REPO:latest
+      - name: Deploy to DOKS
+        run: |
+          doctl kubernetes cluster kubeconfig save --expiry-seconds 600 promptveil
+          kubectl apply -f k8s/base/app-configmap.yaml -f k8s/base/app-service.yaml
+          # Same manifest as a manual apply, but pinned to this commit's image.
+          sed "s|promptveil-registry/app:latest|promptveil-registry/app:${GITHUB_SHA::7}|" \
+            k8s/base/app-deployment.yaml | kubectl apply -f -
+          kubectl rollout status deployment/proxy --timeout=180s
