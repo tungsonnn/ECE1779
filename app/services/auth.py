@@ -108,12 +108,12 @@ def _lookup_tenant_by_hash(key_hash: str) -> Tenant | None:
             row = cur.fetchone()
             if row is None:
                 return None
-            return Tenant(id=str(row[0]), name=str(row[1]))
+            return Tenant(id=int(row[0]), name=str(row[1]))
     finally:
         conn.close()
 
 
-def _count_recent_requests(tenant_id: str) -> int:
+def _count_recent_requests(tenant_id: int) -> int:
     """Count requests logged for `tenant_id` in the past 1 minute."""
     conn = _connect_db(settings.database_url)
     try:
@@ -190,7 +190,7 @@ def check_rate_limit(tenant: Tenant) -> None:
         count = _count_recent_requests(tenant.id)
     except Exception as exc:
         logger.error(
-            "rate limit query failed tenant=%s error=%s",
+            "rate limit query failed tenant=%d error=%s",
             tenant.id,
             type(exc).__name__,
         )
@@ -203,7 +203,7 @@ def check_rate_limit(tenant: Tenant) -> None:
     # would be request #(limit + 1) in the current 1-minute window.
     if count >= limit:
         logger.warning(
-            "rate limit exceeded tenant=%s count=%d limit=%d",
+            "rate limit exceeded tenant=%d count=%d limit=%d",
             tenant.id,
             count,
             limit,
