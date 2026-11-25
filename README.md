@@ -1,10 +1,5 @@
 # Final Project ECE1779
 - A PII-sanitizing LLM proxy for multiple tenants. Every request goes through these steps:
- 
-- Auth -> Presidio detects PII and replaces it with placeholders (`<PERSON_1>`) -> Request goes to LLM 
-  -> Real values are put back into the reply -> An audit row is written in log (metadata + entity counts only)
-- Evaluation uses fake generated data
-- Required stack: Docker, Docker Compose, PostgreSQL with persistent cloud storage, orchestration, monitoring.
 
 ## Team Decision
 - **Decided (as in proposal)**
@@ -28,18 +23,6 @@
 | Hira | LLM + PII | Find PII with Presidio, including our API-key detector. Swap PII for placeholders, call LLM, then put real values back. Measure how much PII we catch, using fake test data. |
 | Ammar | App + deployment | Build main app that runs request steps in order. Package everything in Docker, run it on Kubernetes (minikube, then DOKS), and keep database data safe across restarts. |
 | Son | Monitoring + ops | Design database tables for logs. Set up cloud alerts and an uptime check. Write queries for request counts, speed, and errors. Set up automatic test and build runs on GitHub. |
-
-- **Dependencies**
-
-| Blocked | Waiting On | Why |
-|---|---|---|
-| Everyone | Ammar: app skeleton + Compose |   It's the hub. It should be one endpoint calling five empty functions |
-| Daniel (auth), Ammar (audit write) | Son: schema | Need to read and write to tables |
-| Ammar (k8s files) | Working Compose stack| Same containers, nothing to deploy to K8s until compose runs |
-| Son: alerts + health check| Ammar: DOKS live with public URL | Alerts attach to real nodes |
-| Daniel: HTTPS feature| HTTPS domain + Ammar load balancer config| DO-managed certs need a domain |
-
-Hira is blocked on nobody: PII sanitize and restore only need the Presidio container, so that can work today as standalone.
 
 ## 5-Week Plan
 
@@ -80,7 +63,24 @@ Then deploy:
 The proxy image is `:latest`, which CD keeps pointing at the newest build of `main`,
 so a manual apply never rolls back to an old version.
 
-### Continuous deployment
+### After the first deploy: issue API keys
+
+`api_keys` starts empty, so every request returns 401 until a key exists.
+Tenants 1 and 2 come from `docs/database/seed-dev.sql`. Issue one key per tenant:
+
+    kubectl exec deploy/proxy -- python -m app.services.keygen create --tenant 1
+    kubectl exec deploy/proxy -- python -m app.services.keygen create --tenant 2
+
+Each key is printed **once** and only its SHA-256 hash is stored, so save it right away. Check that it works:
+
+    curl -X POST http://<EXTERNAL-IP>/v1/chat \
+      -H "X-API-Key: <your key>" -H "Content-Type: application/json" \
+      -d '{"prompt":"Email Jane at jane@example.com"}'
+
+A valid key returns 200 with the reply; a missing or wrong key returns 401.
+`kubectl get svc proxy` shows the `EXTERNAL-IP`.
+
+### Continuous Deployment
 
 Every merge to `main` runs `.github/workflows/ci.yml`: tests, then build and push
 `registry.digitalocean.com/promptveil-registry/app:<commit ID>` (and `:latest`),
@@ -92,3 +92,4 @@ then apply the app manifests and roll the `proxy` deployment to that commit's im
 Notes:
 - Without `postgres-init`, `postgres-0` stays stuck in `ContainerCreating`.
 - The init SQL runs only on an empty volume. After a schema change: `kubectl delete pvc data-postgres-0` (this wipes the data).
+
