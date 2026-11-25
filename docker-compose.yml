@@ -28,10 +28,24 @@ services:
       LLM_MODEL: ${LLM_MODEL:-openai-gpt-oss-120b}
       PRESIDIO_URL: http://presidio-analyzer:3000
       DATABASE_URL: postgresql://proxy:${POSTGRES_PASSWORD:-devpass}@postgres:5432/proxy
+      RATE_LIMIT_PER_MINUTE: "60"
     depends_on:
       postgres:
         condition: service_healthy
       presidio-analyzer:
+        condition: service_started
+
+  ui:
+    build: ./ui
+    ports:
+      - "8501:8501"
+    environment:
+      API_URL: http://app:8000
+      UI_ENV: compose
+      UI_DEMO_MODE: "true"
+      UI_ALLOW_CUSTOM_API_URL: "false"
+    depends_on:
+      app:
         condition: service_started
 
   presidio-analyzer:
