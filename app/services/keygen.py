@@ -268,3 +268,31 @@ def rotate_tenant_key(tenant_id: int, key_id: int) -> CreatedApiKey:
         raise _service_unavailable() from exc
     finally:
         conn.close()
+
+def _main() -> None:
+    """Command line: issue or list keys from inside the app container.
+
+    python -m app.services.keygen create --tenant 1   # prints the new key once
+    python -m app.services.keygen list --tenant 1     # ids and dates, never keys
+    """
+    import argparse
+
+    parser = argparse.ArgumentParser(prog="python -m app.services.keygen")
+    parser.add_argument("action", choices=["create", "list"])
+    parser.add_argument("--tenant", type=int, required=True)
+    args = parser.parse_args()
+
+    try:
+        if args.action == "create":
+            created = create_tenant_key(args.tenant)
+            print(f"tenant={created.tenant_id} key_id={created.id}")
+            print(f"API key (shown once, store it now): {created.api_key}")
+        else:
+            for key in list_tenant_keys(args.tenant):
+                print(f"key_id={key.id} created_at={key.created_at:%Y-%m-%d %H:%M}")
+    except HTTPException as exc:
+        raise SystemExit(f"error {exc.status_code}: {exc.detail}")
+
+
+if __name__ == "__main__":
+    _main()
