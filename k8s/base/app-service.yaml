@@ -14,6 +14,13 @@ metadata:
     service.beta.kubernetes.io/do-loadbalancer-protocol: "http"
     # Port LB should use to terminate TLS
     service.beta.kubernetes.io/do-loadbalancer-tls-ports: "443"
+    # Must be set explicitly: a REGIONAL_NETWORK (TCP-only) load balancer cannot
+    # terminate TLS and silently ignores the certificate above (Cloudflare then
+    # returns 525). Leaving the line out does not undo it on the live Service.
+    service.beta.kubernetes.io/do-loadbalancer-type: "REGIONAL"
+    # LB -> node health check. The app answers 404 on "/", so point it at liveness.
+    service.beta.kubernetes.io/do-loadbalancer-healthcheck-protocol: "http"
+    service.beta.kubernetes.io/do-loadbalancer-healthcheck-path: "/health"
 
 spec:
   type: LoadBalancer
