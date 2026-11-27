@@ -1,0 +1,92 @@
+# Streamlit UI (ui/) - demo page in front of the proxy API.
+# Public at https://app.promptveil.online through its own DO load balancer (proposal: "the proxy
+# and UI are exposed through DigitalOcean load balancers with managed HTTPS certificates").
+#
+# Image lives in the same registry repo as the proxy, under ui-* tags: the free registry tier
+# allows a single repository. The proxy keeps <commit ID> and latest; the UI uses ui-<commit ID> and ui-latest.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ui
+  labels:
+    app: ui
+spec:
+  # One copy on purpose: Streamlit keeps each user's session in memory on one pod over a
+  # websocket, so a second replica would drop sessions whenever the LB switches pods.
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ui
+  template:
+    metadata:
+      labels:
+        app: ui
+    spec:
+      containers:
+        - name: ui
+          # Same rule as the proxy: :ui-latest is the newest main build, so a manual apply never rolls back.
+          image: registry.digitalocean.com/promptveil-registry/app:ui-latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8501
+          env:
+            # In-cluster call to the proxy Service. Plain http on port 443: TLS ends at the
+            # proxy's load balancer, the Service itself forwards unencrypted to uvicorn.
+            - name: API_URL
+              value: http://proxy:443
+            # Production-safe values (ui/config.py): no demo keys shown, API_URL can't be
+            # changed from the browser (prevents using the UI to reach arbitrary URLs).
+            - name: UI_ENV
+              value: production
+            - name: UI_DEMO_MODE
+              value: "false"
+            - name: UI_ALLOW_CUSTOM_API_URL
+              value: "false"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+          # Streamlit's built-in health endpoint (same one ui/Dockerfile's HEALTHCHECK uses).
+          livenessProbe:
+            httpGet:
+              path: /_stcore/health
+              port: 8501
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /_stcore/health
+              port: 8501
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+# Same TLS setup as k8s/base/app-service.yaml: HTTPS ends at the LB with the
+# *.promptveil.online certificate, LB -> pod is plain http.
+apiVersion: v1
+kind: Service
+metadata:
+  name: ui
+  labels:
+    app: ui
+  annotations:
+    service.beta.kubernetes.io/do-loadbalancer-certificate-id: "c1607ad0-be87-4b3a-bd17-f93fda4aed38"
+    service.beta.kubernetes.io/do-loadbalancer-protocol: "http"
+    service.beta.kubernetes.io/do-loadbalancer-tls-ports: "443"
+    # Must be there on the FIRST apply: DO can't change a load balancer's type afterwards.
+    # A REGIONAL_NETWORK LB is TCP-only and ignores the certificate (Cloudflare 525).
+    service.beta.kubernetes.io/do-loadbalancer-type: "REGIONAL"
+    service.beta.kubernetes.io/do-loadbalancer-healthcheck-protocol: "http"
+    service.beta.kubernetes.io/do-loadbalancer-healthcheck-path: "/_stcore/health"
+    # Streamlit holds a websocket open per browser tab; the 60 s default would cut idle ones.
+    service.beta.kubernetes.io/do-loadbalancer-http-idle-timeout-seconds: "600"
+spec:
+  type: LoadBalancer
+  selector:
+    app: ui
+  ports:
+    - name: https
+      port: 443
+      targetPort: 8501
