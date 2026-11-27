@@ -73,18 +73,36 @@ Tenants 1 and 2 come from `docs/database/seed-dev.sql`. Issue one key per tenant
 
 Each key is printed **once** and only its SHA-256 hash is stored, so save it right away. Check that it works:
 
-    curl -X POST http://<EXTERNAL-IP>/v1/chat \
+    curl -X POST https://promptveil.online/v1/chat \
       -H "X-API-Key: <your key>" -H "Content-Type: application/json" \
       -d '{"prompt":"Email Jane at jane@example.com"}'
 
 A valid key returns 200 with the reply; a missing or wrong key returns 401.
-`kubectl get svc proxy` shows the `EXTERNAL-IP`.
+The load balancer only listens on HTTPS (443), and its certificate is for `promptveil.online`.
+To test it before DNS points at it, use `https://<EXTERNAL-IP>` with `curl -k` (`kubectl get svc proxy` shows the IP).
+
+### UI (Streamlit)
+
+`k8s/base/ui.yaml` runs the UI (`ui/`) with its own HTTPS load balancer, at `https://app.promptveil.online`.
+It reaches the API inside the cluster (`http://proxy:443`), so its requests do not go back out through Cloudflare.
+
+The free registry tier allows one repository, so the UI image shares `promptveil-registry/app` under `ui-` tags.
+To build and deploy it by hand:
+
+    R=registry.digitalocean.com/promptveil-registry/app
+    doctl registry login
+    docker build -t $R:ui-latest ui/ && docker push $R:ui-latest
+    kubectl apply -f k8s/base/ui.yaml
+    kubectl rollout restart deployment/ui     # pulls the new ui-latest
+
+One replica only: Streamlit keeps each browser session in memory on one pod.
 
 ### Continuous Deployment
 
 Every merge to `main` runs `.github/workflows/ci.yml`: tests, then build and push
 `registry.digitalocean.com/promptveil-registry/app:<commit ID>` (and `:latest`),
 then apply the app manifests and roll the `proxy` deployment to that commit's image.
+The UI goes the same way as `app:ui-<commit ID>` (and `:ui-latest`), rolled out to the `ui` deployment.
 
     kubectl rollout history deployment/proxy   # what is running
     kubectl rollout undo deployment/proxy      # back to the previous commit
@@ -92,4 +110,6 @@ then apply the app manifests and roll the `proxy` deployment to that commit's im
 Notes:
 - Without `postgres-init`, `postgres-0` stays stuck in `ContainerCreating`.
 - The init SQL runs only on an empty volume. After a schema change: `kubectl delete pvc data-postgres-0` (this wipes the data).
+- A load balancer's type can't be changed after it is created. If a Service's LB comes up as `REGIONAL_NETWORK`
+  (Cloudflare shows 525), `kubectl delete svc <name>` and apply it again. This gives a new IP, so update the Cloudflare A record.
 

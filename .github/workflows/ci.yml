@@ -35,6 +35,14 @@ jobs:
           docker build -t $REPO:$TAG -t $REPO:latest .
           docker push $REPO:$TAG
           docker push $REPO:latest
+      # Free registry tier = one repository, so the UI shares `app` under ui-* tags.
+      - name: Build and push UI, tagged ui-<commit ID>
+        run: |
+          REPO=registry.digitalocean.com/promptveil-registry/app
+          TAG=ui-${GITHUB_SHA::7}
+          docker build -t $REPO:$TAG -t $REPO:ui-latest ui/
+          docker push $REPO:$TAG
+          docker push $REPO:ui-latest
       - name: Deploy to DOKS
         run: |
           doctl kubernetes cluster kubeconfig save --expiry-seconds 600 promptveil
@@ -43,3 +51,8 @@ jobs:
           sed "s|promptveil-registry/app:latest|promptveil-registry/app:${GITHUB_SHA::7}|" \
             k8s/base/app-deployment.yaml | kubectl apply -f -
           kubectl rollout status deployment/proxy --timeout=180s
+      - name: Deploy UI to DOKS
+        run: |
+          sed "s|promptveil-registry/app:ui-latest|promptveil-registry/app:ui-${GITHUB_SHA::7}|" \
+            k8s/base/ui.yaml | kubectl apply -f -
+          kubectl rollout status deployment/ui --timeout=180s
